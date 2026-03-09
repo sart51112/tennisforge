@@ -277,7 +277,156 @@ document.addEventListener('mousemove',e=>{
   requestAnimationFrame(animRing);
 })();
 
-// SHOT DEFINITIONS
+// ── MediaPipe landmark indices ──────────────────────────────
+const LM = {
+  NOSE:0, L_SHOULDER:11, R_SHOULDER:12,
+  L_ELBOW:13, R_ELBOW:14, L_WRIST:15, R_WRIST:16,
+  L_HIP:23, R_HIP:24, L_KNEE:25, R_KNEE:26,
+  L_ANKLE:27, R_ANKLE:28, L_HEEL:29, R_HEEL:30,
+  L_FOOT:31, R_FOOT:32
+};
+
+// ── 3-point angle using MediaPipe 3D coords ─────────────────
+function angle3D(lms, a, b, c) {
+  const p = (idx) => lms[idx];
+  if (!p(a)||!p(b)||!p(c)) return null;
+  if (p(a).visibility<0.4||p(b).visibility<0.4||p(c).visibility<0.4) return null;
+  const v1 = {x:p(a).x-p(b).x, y:p(a).y-p(b).y, z:(p(a).z||0)-(p(b).z||0)};
+  const v2 = {x:p(c).x-p(b).x, y:p(c).y-p(b).y, z:(p(c).z||0)-(p(b).z||0)};
+  const dot = v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+  const mag = Math.sqrt(v1.x**2+v1.y**2+v1.z**2) * Math.sqrt(v2.x**2+v2.y**2+v2.z**2);
+  if (mag < 0.0001) return null;
+  return Math.round(Math.acos(Math.min(1,Math.max(-1,dot/mag))) * 180/Math.PI);
+}
+
+// ── 2D vertical angle (tilt) ────────────────────────────────
+function vertAngle(lms, a, b) {
+  const p = (idx) => lms[idx];
+  if (!p(a)||!p(b)) return null;
+  if (p(a).visibility<0.35||p(b).visibility<0.35) return null;
+  return Math.round(Math.abs(Math.atan2(p(b).y-p(a).y, p(b).x-p(a).x)*180/Math.PI));
+}
+
+// ── Detect which phase of the shot this frame is ────────────
+function detectPhase(lms, shotId) {
+  const rWrist = lms[LM.R_WRIST], lWrist = lms[LM.L_WRIST];
+  const rShoulder = lms[LM.R_SHOULDER], lShoulder = lms[LM.L_SHOULDER];
+  const rElbow = lms[LM.R_ELBOW];
+  const rHip = lms[LM.R_HIP], nose = lms[LM.NOSE];
+
+  if (!rWrist||!rShoulder||!rElbow) return 'unknown';
+
+  // Use dominant (right) hand wrist height relative to shoulder & hip
+  const wristAboveShoulder = rWrist.y < rShoulder.y;
+  const wristBelowHip = rWrist.y > rHip.y;
+  const wristAboveHip = rWrist.y < rHip.y;
+  const elbowAboveShoulder = rElbow.y < rShoulder.y;
+
+  if (shotId === 'serve' || shotId === 'smash') {
+    if (elbowAboveShoulder && wristAboveShoulder) return 'contact';
+    if (wristAboveShoulder && !elbowAboveShoulder) return 'trophy';
+    if (wristBelowHip) return 'followthrough';
+    return 'preparation';
+  }
+  if (shotId === 'forehand' || shotId === 'backhand' || shotId === 'slice') {
+    if (wristAboveHip && !wristAboveShoulder) return 'contact';
+    if (wristBelowHip) return 'preparation';
+    if (wristAboveShoulder) return 'followthrough';
+    return 'contact';
+  }
+  if (shotId === 'volley' || shotId === 'dropshot') {
+    return wristAboveHip ? 'contact' : 'preparation';
+  }
+  return 'contact';
+}
+
+// ── Per-shot per-phase scoring rules ────────────────────────
+const phaseRules = {
+  serve: {
+    trophy: [
+      {label:'Knee Coil',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:30,max:55,good:'Good knee coil — loading for explosive drive',bad:'Bend knees 30–55° in trophy position to load power',drill:'Trophy position hold drill — mirror check'},
+      {label:'Elbow Height',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:75,max:105,good:'Elbow at correct trophy height',bad:'Elbow should be 75–105° in trophy — adjust racket height',drill:'Trophy shadow swings focusing on elbow position'},
+    ],
+    contact: [
+      {label:'Full Arm Extension',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:162,max:180,good:'Full arm extension at contact — reaching maximum height!',bad:'Extend arm FULLY at contact (162–180°). Every degree lost = less pace',drill:'Serve with target overhead — reach it on every rep'},
+      {label:'Pronation (Hip Rotation)',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_SHOULDER),min:8,max:28,good:'Good shoulder rotation — pronating correctly through contact',bad:'Rotate shoulders more through contact — pronation drives serve pace',drill:'Slow motion serve with focus on forearm rotation at contact'},
+      {label:'Trunk Tilt',fn:(l)=>vertAngle(l,LM.L_HIP,LM.R_SHOULDER),min:18,max:42,good:'Good trunk tilt into the serve',bad:'Tilt your trunk 18–42° into the serve — use your body weight',drill:'Serve with chalk line — front foot crosses line on follow through'},
+    ],
+    followthrough: [
+      {label:'Follow Through Completion',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:60,max:110,good:'Good follow through — decelerating safely',bad:'Follow through fully — stopping early risks injury and reduces power',drill:'Exaggerate follow through past hip on shadow swings'},
+      {label:'Knee Drive',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:5,max:30,good:'Good knee drive and landing position',bad:'Drive knees through more — push off ground explosively',drill:'Jump serve drills to build explosive leg drive'},
+    ]
+  },
+  forehand: {
+    preparation: [
+      {label:'Unit Turn',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_SHOULDER),min:25,max:55,good:'Good unit turn — shoulders fully coiled',bad:'Turn shoulders more on preparation (25–55°) — coil fully',drill:'Unit turn drill: feet planted, full shoulder rotation only'},
+      {label:'Knee Bend',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:22,max:42,good:'Athletic knee bend — good ready position',bad:'Bend knees 22–42° in preparation for explosive drive',drill:'Split step into forehand preparation — build athletic stance'},
+    ],
+    contact: [
+      {label:'Elbow at Contact',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:86,max:116,good:'Elbow angle perfect at contact — clean power generation',bad:'Elbow must be 86–116° at contact. Too straight or too bent loses power',drill:'Contact point freeze drill — pause at contact and check'},
+      {label:'Hip Rotation',fn:(l)=>vertAngle(l,LM.L_HIP,LM.R_HIP),min:12,max:35,good:'Excellent hip rotation through contact!',bad:'Rotate hips fully through contact — hips drive the forehand not arm',drill:'Hip isolation drill: arm across chest, rotate hips only'},
+      {label:'Knee Stability',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:20,max:40,good:'Stable knee position at contact',bad:'Maintain knee bend at contact — do not stand up early',drill:'Forehand with low feed to stay low through contact'},
+    ],
+    followthrough: [
+      {label:'Follow Through Height',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:50,max:100,good:'Good windshield wiper follow through',bad:'Finish higher — windshield wiper across body generates topspin',drill:'Shadow swing finish: racket ends near left shoulder'},
+      {label:'Weight Transfer',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_HIP),min:5,max:28,good:'Good weight transfer through the shot',bad:'Transfer weight forward more — drive through the ball',drill:'Step-in forehand drill — always step into contact'},
+    ]
+  },
+  backhand: {
+    preparation: [
+      {label:'Shoulder Coil',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_SHOULDER),min:28,max:58,good:'Full shoulder coil — good backhand preparation',bad:'Coil shoulders more (28–58°) — full turn is needed for power',drill:'Backhand coil drill: turn fully until left shoulder faces net'},
+      {label:'Knee Bend',fn:(l)=>{ const a=angle3D(l,LM.L_HIP,LM.L_KNEE,LM.L_ANKLE); return a?180-a:null; },min:22,max:42,good:'Good knee bend preparing for backhand',bad:'Bend knees more in preparation — athletic base needed',drill:'Low preparation drill with slow feeds'},
+    ],
+    contact: [
+      {label:'Arm Extension',fn:(l)=>angle3D(l,LM.L_SHOULDER,LM.L_ELBOW,LM.L_WRIST),min:110,max:155,good:'Good arm extension — driving through the backhand',bad:'Extend arms more through contact (110–155°) — push through the ball',drill:'Wall backhand drill — feel full extension at wall contact'},
+      {label:'Hip Drive',fn:(l)=>vertAngle(l,LM.L_HIP,LM.R_HIP),min:14,max:38,good:'Strong hip drive on the backhand!',bad:'Drive hips through more — backhand needs full hip rotation',drill:'Closed stance backhand with exaggerated hip drive'},
+    ],
+    followthrough: [
+      {label:'High Finish',fn:(l)=>angle3D(l,LM.L_SHOULDER,LM.L_ELBOW,LM.L_WRIST),min:45,max:95,good:'Good high follow through on backhand',bad:'Finish higher — bring the racket up past your shoulder',drill:'High finish shadow swings — end with racket above shoulder'},
+    ]
+  },
+  volley: {
+    contact: [
+      {label:'Compact Punch',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:52,max:90,good:'Compact volley action — minimal backswing!',bad:'Keep elbow 52–90° — NO backswing on volleys. Compact punch only',drill:'Volley with wall 50cm behind — forces compact action'},
+      {label:'Wrist Lock',fn:(l)=>angle3D(l,LM.R_ELBOW,LM.R_WRIST,LM.R_SHOULDER),min:155,max:180,good:'Wrist locked solid — controlled volley direction',bad:'Lock wrist completely at contact — any flex loses direction',drill:'Squeeze grip hard at contact — build lock muscle memory'},
+      {label:'Low Stance',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:25,max:50,good:'Good low athletic stance at net',bad:'Get lower at net (25–50°) — too upright = cannot reach low balls',drill:'Net stance drill — hold low position between every volley'},
+      {label:'Forward Lean',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_SHOULDER),min:5,max:22,good:'Good forward lean — attacking the volley',bad:'Lean forward more into the volley — do not wait for the ball',drill:'Step-in volley drill — always take a step toward ball'},
+    ]
+  },
+  smash: {
+    contact: [
+      {label:'Full Extension',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:165,max:180,good:'Full overhead extension — maximum smash power!',bad:'Extend FULLY overhead (165–180°). Any bend drastically reduces smash power',drill:'Smash with overhead target — touch it on every rep'},
+      {label:'Hip Rotation',fn:(l)=>vertAngle(l,LM.L_HIP,LM.R_HIP),min:18,max:45,good:'Explosive hip rotation on smash!',bad:'Rotate hips 18–45° aggressively through smash — like throwing a ball',drill:'Overhead throwing motion drill — 30 reps to groove pattern'},
+      {label:'Shoulder Turn',fn:(l)=>vertAngle(l,LM.L_SHOULDER,LM.R_SHOULDER),min:28,max:58,good:'Good shoulder rotation — powerful throwing motion',bad:'Turn shoulders more (28–58°) through smash contact',drill:'Shadow smash with exaggerated shoulder rotation'},
+    ],
+    trophy: [
+      {label:'Pointing Hand',fn:(l)=>angle3D(l,LM.L_SHOULDER,LM.L_ELBOW,LM.L_WRIST),min:140,max:180,good:'Good non-racket hand pointing — setting position correctly',bad:'Point your non-racket hand at the ball — turns shoulders and sets position',drill:'Smash with pointer finger extended on non-racket hand'},
+    ]
+  },
+  slice: {
+    preparation: [
+      {label:'High Takeback',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:55,max:95,good:'Good high takeback — set up for downward slice path',bad:'Take racket higher (55–95°) — slice needs a HIGH takeback for high-to-low path',drill:'Slice against wall from high takeback — feel the brush'},
+    ],
+    contact: [
+      {label:'High-to-Low Swing',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:95,max:140,good:'Correct downward swing path — generating backspin!',bad:'Swing more downward through contact (95–140°) — brush under the ball',drill:'Slow feed slice — focus on feeling the downward brush'},
+      {label:'Open Racket Face',fn:(l)=>vertAngle(l,LM.R_ELBOW,LM.R_WRIST),min:15,max:45,good:'Racket face correctly open — good underspin',bad:'Open racket face more — tilt back to brush under ball for backspin',drill:'Slow feed with focus on open face feeling'},
+    ]
+  },
+  dropshot: {
+    contact: [
+      {label:'Soft Wrist Absorption',fn:(l)=>angle3D(l,LM.R_ELBOW,LM.R_WRIST,LM.R_SHOULDER),min:115,max:148,good:'Soft wrist — absorbing pace perfectly for drop shot',bad:'Soften wrist to 115–148° — absorb the ball pace, do not hit it',drill:'Catch ball with racket face — feel it stop. Build soft touch'},
+      {label:'Compact Deception',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:62,max:100,good:'Compact action — good disguise!',bad:'Keep action compact (62–100°) to disguise drop shot from drive',drill:'Alternate drive and drop from identical preparation'},
+    ]
+  },
+  lob: {
+    contact: [
+      {label:'Upward Brush',fn:(l)=>angle3D(l,LM.R_SHOULDER,LM.R_ELBOW,LM.R_WRIST),min:105,max:152,good:'Good upward brush — generating height and topspin',bad:'Swing more upward (105–152°) — brush up the back of the ball',drill:'Height target drill — lob must clear 4m string across court'},
+      {label:'Knee Position',fn:(l)=>{ const a=angle3D(l,LM.R_HIP,LM.R_KNEE,LM.R_ANKLE); return a?180-a:null; },min:22,max:50,good:'Good low defensive position for lob',bad:'Get lower (22–50°) — defensive lobs are hit from a low position',drill:'Defensive lob from deep low feed — forces correct stance'},
+    ]
+  }
+};
+
+// ── Shot definitions ─────────────────────────────────────────
 const shots = [
   {id:'forehand',icon:'🎾',name:'Forehand',desc:'Dominant side drive'},
   {id:'backhand',icon:'🔄',name:'Backhand',desc:'Off-hand groundstroke'},
@@ -289,156 +438,29 @@ const shots = [
   {id:'lob',icon:'🌈',name:'Lob',desc:'High defensive shot'},
 ];
 
-// SHOT ANALYSIS RULES
-// Each shot has: metrics (name, key, ideal angle range, weight)
-// and feedback generators based on pose keypoints
-const shotRules = {
-  forehand:{
-    metrics:['Hip Rotation','Elbow Position','Follow Through','Knee Bend','Shoulder Turn','Wrist Snap','Stance Width','Weight Transfer'],
-    keyChecks:[
-      // elbow should be 90-120 at contact — tight range
-      {key:'elbow_angle',label:'Elbow Angle at Contact',idealMin:88,idealMax:118,goodMsg:'Elbow angle is correct — power and control are well balanced',badMsg:'Elbow angle is off — should be 90–120° at contact. Straighten or bend more',drill:'Shadow swing in slow motion, pause at contact and check elbow with mirror'},
-      // hip rotation — shoulder vs hip horizontal gap should be 35-60
-      {key:'hip_rotation',label:'Hip Rotation',idealMin:35,idealMax:58,goodMsg:'Excellent hip rotation — rotating through the ball correctly',badMsg:'Not enough hip rotation — your hips must lead the swing, not your arm',drill:'Hip rotation drills: feet planted, rotate hips only, 50 reps daily'},
-      // knee bend — 25-45 is athletic ready position
-      {key:'knee_bend',label:'Knee Bend',idealMin:25,idealMax:42,goodMsg:'Good athletic knee bend — stable and explosive base',badMsg:'Knee bend wrong — stay between 25–45°. Too straight = no power, too low = slow recovery',drill:'Wall sit at 30° for 60 seconds to build muscle memory'},
-      // shoulder tilt 12-28 for forehand
-      {key:'shoulder_tilt',label:'Shoulder Tilt',idealMin:12,idealMax:26,goodMsg:'Shoulder tilt is correct — good racket path setup',badMsg:'Shoulder tilt off — drop the hitting shoulder slightly at contact',drill:'Mirror drill: watch your shoulder level during shadow swings'},
-      // wrist should be firm 160-180 at contact
-      {key:'wrist_angle',label:'Wrist Firmness at Contact',idealMin:158,idealMax:180,goodMsg:'Wrist is firm at contact — generating clean topspin',badMsg:'Wrist is breaking at contact — firm it up. A loose wrist kills accuracy',drill:'Hit against wall with focus on wrist lock — feel the firmness'},
-    ]
-  },
-  backhand:{
-    metrics:['Two-Hand Grip','Hip Rotation','Elbow Extension','Knee Bend','Shoulder Rotation','Follow Through','Stance','Contact Point'],
-    keyChecks:[
-      // backhand extension 110-155
-      {key:'elbow_angle',label:'Arm Extension',idealMin:112,idealMax:152,goodMsg:'Good arm extension through contact — driving through the ball',badMsg:'Arm extension wrong — should be 110–155°. Not enough extension loses pace',drill:'Wall backhand drill — focus on feeling full extension at the wall'},
-      // hip drive backhand 45-75
-      {key:'hip_rotation',label:'Hip Drive',idealMin:46,idealMax:72,goodMsg:'Strong hip drive — using your whole body on the backhand',badMsg:'Hips not driving through — backhand needs full hip rotation, not just arms',drill:'Closed stance backhand with exaggerated hip drive, 30 reps'},
-      // knee bend 22-40
-      {key:'knee_bend',label:'Knee Bend',idealMin:22,idealMax:40,goodMsg:'Good stable knee position for backhand',badMsg:'Adjust knee bend — 22–40° ideal. Too upright = poor balance on backhand',drill:'Backhand with low ball feed to force proper knee position'},
-      // shoulder rotation 22-42
-      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:22,idealMax:42,goodMsg:'Shoulders rotating correctly through the backhand',badMsg:'Incomplete shoulder rotation — full shoulder turn is required for a clean backhand',drill:'Shoulder coil drill: turn fully back, then fully through, no ball'},
-      // wrist firmness 148-180
-      {key:'wrist_angle',label:'Wrist Lock',idealMin:148,idealMax:180,goodMsg:'Wrist is locked — clean contact on the backhand',badMsg:'Wrist breaking on backhand — lock the wrists firmly through contact zone',drill:'Two-hand backhand grip squeeze drill against wall'},
-    ]
-  },
-  serve:{
-    metrics:['Ball Toss','Knee Bend','Pronation','Trophy Position','Hip Drive','Shoulder Rotation','Arm Extension','Follow Through'],
-    keyChecks:[
-      // serve arm must be near fully extended 165-180
-      {key:'elbow_angle',label:'Arm Extension at Contact',idealMin:166,idealMax:180,goodMsg:'Full arm extension at contact — reaching maximum height',badMsg:'Arm not fully extended — you MUST reach up completely. Any bend loses 10–20% of serve power',drill:'Serve with a target at max reach height — touch it with racket on every rep'},
-      // pronation/hip — serve hip rotation 55-95 is good
-      {key:'hip_rotation',label:'Hip Rotation & Pronation',idealMin:56,idealMax:92,goodMsg:'Good hip rotation — body is driving the serve correctly',badMsg:'Insufficient hip/pronation — rotate forearm INWARD at contact like turning a doorknob. This is the #1 serve mistake',drill:'Slow motion serve with focus only on forearm pronation — 20 reps no ball'},
-      // knee coil 35-60 in trophy
-      {key:'knee_bend',label:'Knee Coil (Trophy Position)',idealMin:36,idealMax:58,goodMsg:'Good knee bend — coiling for explosive upward drive',badMsg:'Knee coil is wrong — bend 35–60° in trophy position to load your legs for upward explosion',drill:'Trophy position hold drill — hold for 3 seconds, check knee angle in mirror'},
-      // trunk tilt 22-45
-      {key:'shoulder_tilt',label:'Trunk Tilt Into Serve',idealMin:22,idealMax:44,goodMsg:'Good trunk tilt — using body weight effectively',badMsg:'Not tilting trunk enough — lean your whole body into the serve. Stand tall = weak serve',drill:'Serve with chalk line on ground — ensure front foot crosses line on follow through'},
-      // wrist snap 125-160 for serve
-      {key:'wrist_angle',label:'Wrist Snap',idealMin:126,idealMax:158,goodMsg:'Wrist is snapping well — generating spin and pace',badMsg:'Wrist snap is insufficient — snap aggressively downward at contact for kick serve, forward for flat',drill:'Ball catch drill: toss ball, snap wrist to catch it — builds snap muscle memory'},
-    ]
-  },
-  volley:{
-    metrics:['Compact Swing','Punch Action','Ready Position','Wrist Firmness','Footwork','Contact Point','Low Stance','Split Step'],
-    keyChecks:[
-      // volley must be COMPACT — 55-95 elbow
-      {key:'elbow_angle',label:'Compact Punch (No Backswing)',idealMin:56,idealMax:92,goodMsg:'Compact volley — minimal backswing, clean punch',badMsg:'Too much backswing on volley — elbow must stay at 55–95°. Big swings at net = errors',drill:'Volley with wall behind you — forces compact action'},
-      // low stance 28-52
-      {key:'knee_bend',label:'Low Ready Stance',idealMin:28,idealMax:50,goodMsg:'Good low athletic stance at the net',badMsg:'Standing too upright for volleys — get low, 28–50° knee bend for any shot height',drill:'Net volley drill — hold low position between every shot'},
-      // wrist very firm at net 162-180
-      {key:'wrist_angle',label:'Locked Wrist',idealMin:162,idealMax:180,goodMsg:'Wrist is locked — volleys are controlled and firm',badMsg:'Wrist too loose for volley — must be locked completely. Soft wrist = volleys go anywhere',drill:'Squeeze grip handle hard at contact — build the lock habit'},
-      // forward lean 6-22
-      {key:'shoulder_tilt',label:'Forward Body Lean',idealMin:6,idealMax:22,goodMsg:'Good forward lean — attacking the volley',badMsg:'Not leaning forward enough — lean INTO the volley, do not wait for it',drill:'Net approach drill — coach feeds, you must step forward into every volley'},
-      // shoulder turn 18-48
-      {key:'hip_rotation',label:'Shoulder Turn',idealMin:18,idealMax:46,goodMsg:'Good shoulder turn — blocking volley correctly',badMsg:'Turn shoulders on volleys — a slight turn gives direction. Pure arm volleys lack control',drill:'Shoulder turn isolation — volley with one arm behind back'},
-    ]
-  },
-  smash:{
-    metrics:['Positioning','Racket Preparation','Arm Extension','Hip Rotation','Contact Point','Follow Through','Footwork','Power'],
-    keyChecks:[
-      // smash needs max extension 168-180
-      {key:'elbow_angle',label:'Full Overhead Extension',idealMin:168,idealMax:180,goodMsg:'Full arm extension on smash — maximum power and reach',badMsg:'Not reaching high enough — smash MUST be fully extended 168–180°. Bent arm = weak smash',drill:'Smash with highest possible contact point — use cone as target overhead'},
-      // smash hip 68-108
-      {key:'hip_rotation',label:'Hip & Trunk Power',idealMin:68,idealMax:106,goodMsg:'Explosive hip and trunk rotation — powerful smash',badMsg:'Weak hip rotation on smash — rotate hips and trunk aggressively like throwing a ball',drill:'Smash shadow swings — exaggerate hip snap until it feels natural'},
-      // leg drive 18-42
-      {key:'knee_bend',label:'Explosive Leg Drive',idealMin:18,idealMax:40,goodMsg:'Good leg drive — ground power transferred to smash',badMsg:'Not using legs on smash — push off ground at 18–40° bend. Legs generate smash power',drill:'Jump smash practice — literally jump on every smash to build explosive habit'},
-      // shoulder rotation 32-62
-      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:32,idealMax:60,goodMsg:'Shoulder rotation is strong — throwing motion correct',badMsg:'Shoulder rotation weak — smash is a throwing motion. Turn shoulders 32–60° through contact',drill:'Ball throwing motion drill — 30 overhand throws to groove the pattern'},
-      // wrist snap 132-165
-      {key:'wrist_angle',label:'Wrist Snap Power',idealMin:132,idealMax:163,goodMsg:'Strong wrist snap — generating pace on the smash',badMsg:'Wrist snap too weak — snap the wrist hard at contact for extra pace and angle',drill:'Smash with towel on wrist — you will feel the snap clearly'},
-    ]
-  },
-  slice:{
-    metrics:['High to Low Swing','Open Racket Face','Underspin','Follow Through','Stance','Knee Bend','Contact Point','Grip'],
-    keyChecks:[
-      // slice swing path 95-140
-      {key:'elbow_angle',label:'High-to-Low Swing Path',idealMin:96,idealMax:138,goodMsg:'Correct high-to-low slice swing — generating clean backspin',badMsg:'Swing path wrong for slice — must start HIGH and go LOW through contact. Flat swing = no slice',drill:'Slice against wall from high takeback — feel the downward brush'},
-      // open face 105-148
-      {key:'wrist_angle',label:'Open Racket Face',idealMin:106,idealMax:146,goodMsg:'Racket face is open — creating good underspin',badMsg:'Racket face not open enough — tilt racket back 15–20° to brush under the ball for backspin',drill:'Slow feed slice — focus only on feeling the open face at contact'},
-      // knee 16-38
-      {key:'knee_bend',label:'Knee Bend',idealMin:16,idealMax:38,goodMsg:'Good knee position for slice control',badMsg:'Knee bend off for slice — slight bend 16–38° gives better balance and low ball control',drill:'Low slice drill — coach feeds low, forces correct knee and swing path'},
-      // shoulder turn 26-52
-      {key:'hip_rotation',label:'Shoulder Preparation',idealMin:26,idealMax:50,goodMsg:'Good shoulder turn on slice takeback',badMsg:'Not enough shoulder turn on slice — full coil needed before the downward swing',drill:'Slice coil drill — turn shoulders back fully, pause, then swing'},
-      // forward motion 12-32
-      {key:'shoulder_tilt',label:'Shoulder Drive Through',idealMin:12,idealMax:32,goodMsg:'Shoulder driving through the slice correctly',badMsg:'Shoulder stopping on slice — follow through with shoulder past contact point',drill:'Slice follow through drill — finish with shoulder pointing at target'},
-    ]
-  },
-  dropshot:{
-    metrics:['Disguise','Touch','Racket Face','Follow Through','Positioning','Deception','Net Clearance','Spin'],
-    keyChecks:[
-      // touch wrist 118-148 — absorbing
-      {key:'wrist_angle',label:'Soft Touch (Wrist Absorption)',idealMin:118,idealMax:146,goodMsg:'Good wrist softness — absorbing pace for delicate touch',badMsg:'Wrist too firm for drop shot — soften it to 118–148° to absorb ball pace. Hard wrist = long drop shot',drill:'Catch the ball with racket face — feel it stop. Build the soft touch feeling'},
-      // compact 65-105
-      {key:'elbow_angle',label:'Compact Deceptive Action',idealMin:66,idealMax:102,goodMsg:'Compact action — good disguise on the drop shot',badMsg:'Too big a swing for drop shot — keep elbow 65–105°, compact action hides your intention',drill:'Same preparation as drive, last moment open face — disguise drill with partner'},
-      // low position 22-48
-      {key:'knee_bend',label:'Low Contact Position',idealMin:22,idealMax:46,goodMsg:'Good low position — drop shot contact height is correct',badMsg:'Too upright for drop shot — lower yourself 22–48° to control the low contact point',drill:'Drop shot from low feed — always from knee height or below'},
-      // disguise 14-42
-      {key:'hip_rotation',label:'Body Disguise',idealMin:14,idealMax:40,goodMsg:'Good body language — disguising the drop shot well',badMsg:'Body is telegraphing the drop shot — prepare IDENTICALLY to a regular groundstroke',drill:'Alternate drive and drop from same exact preparation — partner must guess'},
-      // angle 8-28
-      {key:'shoulder_tilt',label:'Drop Shot Angle',idealMin:8,idealMax:26,goodMsg:'Good angle — drop shot direction is controlled',badMsg:'Shoulder angle wrong — slight 8–26° open shoulder gives cross-court angle on drop shot',drill:'Cross court drop shot targets drill — hit 20 to each corner'},
-    ]
-  },
-  lob:{
-    metrics:['Contact Point','Swing Path','Follow Through','Topspin/Slice','Disguise','Height Control','Direction','Recovery'],
-    keyChecks:[
-      // upward brush 105-152
-      {key:'elbow_angle',label:'Upward Swing Path',idealMin:106,idealMax:150,goodMsg:'Good upward brush — generating height and topspin on lob',badMsg:'Swing path too flat for lob — swing UPWARD 105–152° brushing up the back of the ball',drill:'Defensive lob practice — set a height target (string across court 4m high)'},
-      // topspin brush 132-168
-      {key:'wrist_angle',label:'Topspin Brush Action',idealMin:132,idealMax:166,goodMsg:'Good topspin brush — lob will land deep and kick away',badMsg:'Not enough topspin brush on lob — brush UP aggressively. Flat lobs are easy to smash',drill:'Topspin lob isolation — feel the low-to-high extreme brush'},
-      // low recovery 22-52
-      {key:'knee_bend',label:'Low Defensive Position',idealMin:22,idealMax:50,goodMsg:'Good low position — defensive lob hit from the right height',badMsg:'Too upright for a defensive lob — 22–50° knee bend, get under the ball',drill:'Defensive lob from deep low feed — forces correct low position'},
-      // body opening 22-62
-      {key:'hip_rotation',label:'Hip Opening',idealMin:22,idealMax:60,goodMsg:'Good hip opening — controlling lob height and direction',badMsg:'Hips not opening enough on lob — open hips through the shot for more height and direction control',drill:'Open stance lob drill — exaggerate hip opening on every rep'},
-      // shoulder lift 16-38
-      {key:'shoulder_tilt',label:'Shoulder Follow Through',idealMin:16,idealMax:36,goodMsg:'Good shoulder follow through — lob height well controlled',badMsg:'Shoulder stopping too early — follow the ball UP with your shoulder after contact',drill:'Lob follow through drill — shoulder must point UP at finish'},
-    ]
-  },
-};
-
-// PRO TIPS
 const proTips = [
   {shot:'Forehand',title:'The Windshield Wiper Finish',body:'The modern forehand finish should sweep across your body like a windshield wiper. This generates topspin and protects your arm. Aim to finish with the racket near your non-dominant shoulder.'},
   {shot:'Backhand',title:'Drive Through the Ball',body:'On the two-handed backhand, your dominant hand provides power but the non-dominant hand controls direction. Both hands should push through the contact zone together.'},
   {shot:'Serve',title:'Pronation is Everything',body:'The single most common serve mistake is no pronation. Your forearm must rotate inward (like turning a doorknob) as you make contact. This is the source of pace on the flat serve.'},
-  {shot:'Volley',title:'Block, Don\'t Swing',body:'Volleys are not mini groundstrokes. Use a firm wrist, compact punch, and let the ball\'s pace do the work. Too much backswing at net is the number one volley error.'},
-  {shot:'Overhead Smash',title:'Point and Position',body:'Use your non-racket hand to point at the ball as it rises. This turns your shoulders, sets your position and gives your brain a target. Never let the ball drop behind you.'},
+  {shot:'Volley',title:'Block, Do Not Swing',body:'Volleys are not mini groundstrokes. Use a firm wrist, compact punch, and let the ball pace do the work. Too much backswing at net is the number one volley error.'},
+  {shot:'Overhead Smash',title:"Point and Position",body:'Use your non-racket hand to point at the ball as it rises. This turns your shoulders, sets your position and gives your brain a target. Never let the ball drop behind you.'},
   {shot:'Slice',title:'High Takeback Every Time',body:'The slice backswing must go above the ball. Start your racket high and swing down and through. A low takeback produces a weak, floating slice with no bite.'},
   {shot:'Drop Shot',title:'Disguise is the Weapon',body:'A drop shot only works if disguised. Prepare identically to your normal groundstroke. The deception is in the last split second — soften the grip and open the face at contact.'},
   {shot:'Lob',title:'Topspin Lobs Win Points',body:'A flat lob is easy to smash. Learn the topspin lob — brush up the back of the ball aggressively. A good topspin lob lands deep, kicks away and is nearly impossible to smash.'},
 ];
 
 let selectedShot = 'forehand';
-let detector = null;
+let poseInstance = null;
 let analysisHistory = [];
 let isAnalyzing = false;
-let videoEl = null, poseCanvas = null, ctx = null;
+let allFrameLandmarks = [];
+let videoEl, poseCanvas, ctx;
 
-// RENDER SHOT BUTTONS
+// ── Render shot buttons ──────────────────────────────────────
 const shotGrid = document.getElementById('shotGrid');
 shots.forEach(s => {
   const btn = document.createElement('div');
   btn.className = 'shot-btn' + (s.id === selectedShot ? ' active' : '');
-  btn.dataset.id = s.id;
   btn.innerHTML = `<span class="shot-icon">${s.icon}</span><div class="shot-name">${s.name}</div><div class="shot-desc">${s.desc}</div>`;
   btn.onclick = () => {
     document.querySelectorAll('.shot-btn').forEach(b => b.classList.remove('active'));
@@ -449,7 +471,7 @@ shots.forEach(s => {
   shotGrid.appendChild(btn);
 });
 
-// RENDER TIPS
+// ── Render tips ──────────────────────────────────────────────
 const tipsGrid = document.getElementById('tipsGrid');
 proTips.forEach(t => {
   const card = document.createElement('div');
@@ -458,18 +480,15 @@ proTips.forEach(t => {
   tipsGrid.appendChild(card);
 });
 
-// FILE UPLOAD
+// ── File upload ──────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   videoEl = document.getElementById('videoEl');
-  videoEl.crossOrigin = "anonymous";
   poseCanvas = document.getElementById('poseCanvas');
   ctx = poseCanvas.getContext('2d');
-  // make analyzeBtn work via onclick attribute too
   window.startAnalysis = startAnalysis;
   window.resetAnalysis = resetAnalysis;
 
-  const fileInput = document.getElementById('fileInput');
-  fileInput.addEventListener('change', e => {
+  document.getElementById('fileInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (file) loadVideo(file);
   });
@@ -478,48 +497,37 @@ window.addEventListener('DOMContentLoaded', () => {
   uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragover'); });
   uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
   uploadBox.addEventListener('drop', e => {
-    e.preventDefault();
-    uploadBox.classList.remove('dragover');
+    e.preventDefault(); uploadBox.classList.remove('dragover');
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('video/')) loadVideo(file);
   });
 
   videoEl.addEventListener('timeupdate', updateProgress);
-  videoEl.addEventListener('loadedmetadata', () => {
-    updateProgress();
-    syncCanvasSize();
-  });
-  window.addEventListener('resize', syncCanvasSize);
 });
 
-function syncCanvasSize() {
-  if (!videoEl) return;
-  poseCanvas.width = videoEl.videoWidth || videoEl.clientWidth;
-  poseCanvas.height = videoEl.videoHeight || videoEl.clientHeight;
-  poseCanvas.style.width = '100%';
-  poseCanvas.style.height = '100%';
-}
-
 function loadVideo(file) {
-  const url = URL.createObjectURL(file);
-  videoEl.src = url;
+  videoEl.src = URL.createObjectURL(file);
+  videoEl.crossOrigin = 'anonymous';
   document.getElementById('analyzerSection').classList.add('show');
-  setStatus('ready', 'Video loaded — select shot type and press Analyze Shot');
+  setStatus('ready', 'Video loaded — select your shot type and press Analyze Shot');
   resetResults();
   videoEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function syncCanvas() {
+  poseCanvas.width = videoEl.videoWidth || 640;
+  poseCanvas.height = videoEl.videoHeight || 480;
+}
+
 function updateProgress() {
   if (!videoEl.duration) return;
-  const pct = (videoEl.currentTime / videoEl.duration) * 100;
-  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressFill').style.width = (videoEl.currentTime / videoEl.duration * 100) + '%';
   const fmt = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
   document.getElementById('timeLabel').textContent = `${fmt(videoEl.currentTime)} / ${fmt(videoEl.duration)}`;
 }
 
 function setStatus(type, text) {
-  const dot = document.getElementById('statusDot');
-  dot.className = 'status-dot ' + type;
+  document.getElementById('statusDot').className = 'status-dot ' + type;
   document.getElementById('statusText').textContent = text;
 }
 
@@ -533,239 +541,243 @@ function resetAnalysis() {
   document.getElementById('fileInput').value = '';
   resetResults();
   ctx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
+  allFrameLandmarks = [];
 }
 
-// LOAD TENSORFLOW MODEL
-async function loadDetector() {
-  if (detector) return detector;
-  setStatus('analyzing', 'Loading pose model — first time takes 10-20 seconds...');
-  let waited = 0;
-  while (typeof tf === 'undefined' || typeof poseDetection === 'undefined') {
-    await new Promise(r => setTimeout(r, 400));
-    waited += 400;
-    if (waited > 20000) throw new Error('TensorFlow.js did not load — check internet connection');
-  }
-  try { await tf.setBackend('webgl'); } catch(e) { await tf.setBackend('cpu'); }
-  await tf.ready();
-  detector = await poseDetection.createDetector(
-    poseDetection.SupportedModels.MoveNet,
-    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-  );
-  return detector;
+// ── Load MediaPipe Pose ──────────────────────────────────────
+async function loadPose() {
+  if (poseInstance) return poseInstance;
+  setStatus('analyzing', 'Loading MediaPipe pose model — 10–20 seconds first time...');
+
+  return new Promise((resolve, reject) => {
+    let timeout = setTimeout(() => reject(new Error('MediaPipe load timeout — check internet')), 30000);
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+    pose.setOptions({
+      modelComplexity: 2,       // highest accuracy
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    pose.onResults(() => {}); // dummy init
+    pose.initialize().then(() => {
+      clearTimeout(timeout);
+      poseInstance = pose;
+      resolve(pose);
+    }).catch(reject);
+  });
 }
 
-// ANALYSIS
+// ── Main analysis function ───────────────────────────────────
 async function startAnalysis() {
   if (isAnalyzing) return;
   videoEl = document.getElementById('videoEl');
-  videoEl.crossOrigin = "anonymous";
   poseCanvas = document.getElementById('poseCanvas');
   ctx = poseCanvas.getContext('2d');
+
   if (!videoEl.src || videoEl.readyState < 1) {
     setStatus('ready', 'Please upload a video first'); return;
   }
+
   isAnalyzing = true;
+  allFrameLandmarks = [];
   const btn = document.getElementById('analyzeBtn');
-  btn.textContent = '⏳ Loading model...';
+  btn.textContent = '⏳ Loading MediaPipe...';
   btn.classList.add('analyzing');
-  setStatus('analyzing', 'Loading pose model — wait 10-20 seconds first time...');
+
   try {
-    await loadDetector();
-    setStatus('analyzing', 'Model ready! Scanning your ' + selectedShot + '...');
+    const pose = await loadPose();
+    setStatus('analyzing', 'Model ready! Scanning frames...');
     btn.textContent = '⏳ Analyzing...';
+
     if (!videoEl.duration || isNaN(videoEl.duration)) {
-      await new Promise(r => { videoEl.onloadedmetadata = r; setTimeout(r, 3000); });
+      await new Promise(r => { videoEl.onloadedmetadata = r; setTimeout(r, 4000); });
     }
+
+    syncCanvas();
     const duration = videoEl.duration || 3;
-    const numFrames = Math.max(5, Math.min(10, Math.floor(duration * 2)));
-    const frames = [];
+    const numFrames = Math.max(6, Math.min(16, Math.floor(duration * 3)));
+    const frameData = [];
+
+    // Set up pose result handler
+    pose.onResults(results => {
+      if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+        frameData.push([...results.poseLandmarks]);
+      }
+    });
+
+    // Process each frame
     for (let i = 0; i < numFrames; i++) {
-      const t = (duration / numFrames) * i + 0.1;
-      videoEl.currentTime = Math.min(t, duration - 0.1);
+      const t = (duration / numFrames) * i + 0.05;
+      videoEl.currentTime = Math.min(t, duration - 0.05);
       await new Promise(r => {
         const fn = () => { videoEl.removeEventListener('seeked', fn); r(); };
         videoEl.addEventListener('seeked', fn);
-        setTimeout(r, 3000);
+        setTimeout(r, 2500);
       });
-      await new Promise(r => setTimeout(r, 300));
-      try {
-        // draw frame to offscreen canvas first — much more reliable than direct video
-        const offscreen = document.createElement('canvas');
-        offscreen.width = videoEl.videoWidth || 640;
-        offscreen.height = videoEl.videoHeight || 480;
-        const offCtx = offscreen.getContext('2d');
-        offCtx.drawImage(videoEl, 0, 0, offscreen.width, offscreen.height);
-        const poses = await detector.estimatePoses(offscreen);
-        if (poses && poses.length > 0) frames.push(poses[0]);
-      } catch(e) { console.warn('frame err', e); }
+      await new Promise(r => setTimeout(r, 200));
+
+      // Draw frame to offscreen canvas then send to MediaPipe
+      const off = document.createElement('canvas');
+      off.width = videoEl.videoWidth || 640;
+      off.height = videoEl.videoHeight || 480;
+      off.getContext('2d').drawImage(videoEl, 0, 0);
+      await pose.send({ image: off });
+      await new Promise(r => setTimeout(r, 100));
+
       document.getElementById('progressFill').style.width = ((i+1)/numFrames*100) + '%';
-      setStatus('analyzing', `Scanning frame ${i+1} of ${numFrames}...`);
+      setStatus('analyzing', `Scanning frame ${i+1} of ${numFrames} (detected: ${frameData.length})...`);
     }
-    if (frames.length > 0) {
-      const best = frames.reduce((a,b) =>
-        a.keypoints.reduce((s,k)=>s+k.score,0) > b.keypoints.reduce((s,k)=>s+k.score,0) ? a : b
-      );
-      drawPose(best);
-    } else {
-      setStatus('ready', 'Body not fully visible — film full body from the side. Showing form checklist.');
+
+    if (frameData.length === 0) {
+      setStatus('ready', '⚠ No body detected — film full body from the side in good lighting');
+      btn.textContent = '⚡ Analyze Shot'; btn.classList.remove('analyzing'); isAnalyzing = false; return;
     }
-    const metrics = computeMetrics(frames);
-    const result = generateResult(metrics, selectedShot, frames.length);
+
+    // Draw skeleton on last good frame
+    drawSkeleton(frameData[frameData.length - 1]);
+
+    // Phase-aware scoring
+    const result = scoreByPhase(frameData, selectedShot);
     renderResults(result);
     addToHistory(result);
-    setStatus('done', `Analysis complete — ${result.overallScore}/10 on your ${selectedShot}`);
+    setStatus('done', `✅ Analysis complete — ${result.overallScore}/10 on your ${selectedShot} (${frameData.length} frames)`);
+
   } catch(e) {
     console.error(e);
-    setStatus('ready', 'Error: ' + (e.message||'unknown') + ' — try a shorter MP4 video');
+    setStatus('ready', '❌ ' + (e.message || 'Error') + ' — try a shorter MP4 filmed from the side');
   }
+
   btn.textContent = '⚡ Analyze Shot';
   btn.classList.remove('analyzing');
   isAnalyzing = false;
 }
 
-// KEYPOINT HELPERS
-function getKp(pose, name) {
-  return pose.keypoints.find(k => k.name === name);
-}
-function angle(a, b, c) {
-  if (!a || !b || !c) return null;
-  if (a.score < 0.25 || b.score < 0.25 || c.score < 0.25) return null;
-  const ab = { x: a.x - b.x, y: a.y - b.y };
-  const cb = { x: c.x - b.x, y: c.y - b.y };
-  const dot = ab.x*cb.x + ab.y*cb.y;
-  const mag = Math.sqrt(ab.x**2+ab.y**2) * Math.sqrt(cb.x**2+cb.y**2);
-  if (mag === 0) return null;
-  return Math.round(Math.acos(Math.min(1, Math.max(-1, dot/mag))) * 180 / Math.PI);
-}
-function avgMetric(frames, fn) {
-  const vals = frames.map(fn).filter(v => v !== null);
-  if (vals.length === 0) return null;
-  return Math.round(vals.reduce((a,b) => a+b, 0) / vals.length);
-}
-
-// COMPUTE METRICS FROM FRAMES
-function computeMetrics(frames) {
-  const m = {};
-  // Elbow angle (right elbow) — shoulder, elbow, wrist
-  m.elbow_angle = avgMetric(frames, p => angle(getKp(p,'right_shoulder'), getKp(p,'right_elbow'), getKp(p,'right_wrist'))) ||
-                  avgMetric(frames, p => angle(getKp(p,'left_shoulder'), getKp(p,'left_elbow'), getKp(p,'left_wrist')));
-  // Knee bend — hip, knee, ankle
-  m.knee_bend = avgMetric(frames, p => {
-    const a = angle(getKp(p,'right_hip'), getKp(p,'right_knee'), getKp(p,'right_ankle'));
-    return a !== null ? 180 - a : null;
-  });
-  // Hip rotation — horizontal diff between shoulders
-  m.hip_rotation = avgMetric(frames, p => {
-    const ls = getKp(p,'left_shoulder'), rs = getKp(p,'right_shoulder');
-    const lh = getKp(p,'left_hip'), rh = getKp(p,'right_hip');
-    if (!ls||!rs||!lh||!rh) return null;
-    if (ls.score<0.25||rs.score<0.25||lh.score<0.25||rh.score<0.25) return null;
-    const shoulderAngle = Math.abs(Math.atan2(rs.y-ls.y, rs.x-ls.x) * 180/Math.PI);
-    const hipAngle = Math.abs(Math.atan2(rh.y-lh.y, rh.x-lh.x) * 180/Math.PI);
-    return Math.round(Math.abs(shoulderAngle - hipAngle));
-  });
-  // Shoulder tilt
-  m.shoulder_tilt = avgMetric(frames, p => {
-    const ls = getKp(p,'left_shoulder'), rs = getKp(p,'right_shoulder');
-    if (!ls||!rs||ls.score<0.25||rs.score<0.25) return null;
-    return Math.round(Math.abs(Math.atan2(rs.y-ls.y, rs.x-ls.x) * 180/Math.PI));
-  });
-  // Wrist angle — elbow, wrist, index finger (use wrist to elbow to shoulder as proxy)
-  m.wrist_angle = avgMetric(frames, p => angle(getKp(p,'right_elbow'), getKp(p,'right_wrist'), getKp(p,'right_shoulder'))) || 155;
-  return m;
-}
-
-// GENERATE RESULT
-function generateResult(metrics, shotId, frameCount) {
-  const rules = shotRules[shotId] || shotRules.forehand;
-  let totalScore = 0, count = 0;
+// ── Phase-aware scoring ──────────────────────────────────────
+function scoreByPhase(frames, shotId) {
+  const rules = phaseRules[shotId] || phaseRules.forehand;
   const checks = [];
   const feedback = [];
   const drills = [];
 
-  rules.keyChecks.forEach(check => {
-    const val = metrics[check.key];
-    if (val === null || val === undefined) {
-      // Could not detect — give neutral score
-      checks.push({ label: check.label, score: 5, val: 'N/A', status: 'ok' });
-      totalScore += 5; count++;
-      return;
-    }
-    let score, status;
-    if (val >= check.idealMin && val <= check.idealMax) {
-      // within ideal range — but how close to perfect centre?
-      const centre = (check.idealMin + check.idealMax) / 2;
-      const range = (check.idealMax - check.idealMin) / 2;
-      const dist = Math.abs(val - centre) / range; // 0 = perfect, 1 = edge of ideal
-      score = Math.round(10 - dist * 2); // 8–10
-      status = 'good';
-      feedback.push({ type: 'good', title: check.label, msg: check.goodMsg });
-    } else {
-      const diff = Math.min(Math.abs(val - check.idealMin), Math.abs(val - check.idealMax));
-      if (diff <= 8) {
-        // very close — just outside ideal
-        score = Math.round(6 + Math.random() * 0.8); // 6–6.8
-        status = 'ok';
-        feedback.push({ type: 'warn', title: check.label, msg: check.badMsg });
-        drills.push({ title: check.label + ' Drill', desc: check.drill });
-      } else if (diff <= 20) {
-        // noticeably off
-        score = Math.round(4 + Math.random() * 1.2); // 4–5.2
-        status = 'ok';
-        feedback.push({ type: 'warn', title: check.label, msg: check.badMsg });
-        drills.push({ title: check.label + ' Drill', desc: check.drill });
-      } else if (diff <= 40) {
-        // significantly off
-        score = Math.round(2 + Math.random() * 1.5); // 2–3.5
-        status = 'bad';
-        feedback.push({ type: 'bad', title: check.label, msg: check.badMsg });
-        drills.push({ title: check.label + ' Drill', desc: check.drill });
-      } else {
-        // very wrong
-        score = Math.round(1 + Math.random()); // 1–2
-        status = 'bad';
-        feedback.push({ type: 'bad', title: check.label, msg: check.badMsg });
-        drills.push({ title: check.label + ' Drill', desc: check.drill });
-      }
-    }
-    checks.push({ label: check.label, score, val, status });
-    totalScore += score; count++;
+  // Group frames by detected phase
+  const phaseFrames = {};
+  frames.forEach(lms => {
+    const phase = detectPhase(lms, shotId);
+    if (!phaseFrames[phase]) phaseFrames[phase] = [];
+    phaseFrames[phase].push(lms);
   });
 
-  // strict average — no bonus inflation
-  const overallScore = Math.min(10, Math.max(1, Math.round(totalScore / count)));
-  const shotName = shots.find(s => s.id === shotId)?.name || shotId;
+  // Score each phase rules
+  Object.entries(rules).forEach(([phase, ruleList]) => {
+    const pFrames = phaseFrames[phase] || frames; // fallback to all frames
+    ruleList.forEach(rule => {
+      // Average the metric across frames for this phase
+      const vals = pFrames.map(lms => rule.fn(lms)).filter(v => v !== null);
+      if (vals.length === 0) {
+        checks.push({ label: rule.label + ' (' + phase + ')', score: 5, val: 'N/A', status: 'ok', phase });
+        feedback.push({ type: 'warn', title: rule.label, msg: 'Could not measure — ensure full body is visible' });
+        return;
+      }
+      const val = Math.round(vals.reduce((a,b) => a+b, 0) / vals.length);
+      let score, status;
+      if (val >= rule.min && val <= rule.max) {
+        const centre = (rule.min + rule.max) / 2;
+        const range = (rule.max - rule.min) / 2;
+        const dist = Math.abs(val - centre) / range;
+        score = Math.round(10 - dist * 1.5);
+        status = 'good';
+        feedback.push({ type: 'good', title: rule.label, msg: rule.good });
+      } else {
+        const diff = Math.min(Math.abs(val - rule.min), Math.abs(val - rule.max));
+        if (diff <= 8) { score = 6; status = 'ok'; }
+        else if (diff <= 18) { score = 4; status = 'ok'; }
+        else if (diff <= 35) { score = 3; status = 'bad'; }
+        else { score = 1; status = 'bad'; }
+        feedback.push({ type: diff <= 18 ? 'warn' : 'bad', title: rule.label + ' (' + phase + ')', msg: rule.bad });
+        drills.push({ title: rule.label, desc: rule.drill });
+      }
+      checks.push({ label: rule.label + ' (' + phase + ')', score, val, status, phase });
+    });
+  });
 
-  return { shotId, shotName, overallScore, checks, feedback, drills, metrics, timestamp: new Date() };
+  const overallScore = checks.length > 0
+    ? Math.min(10, Math.max(1, Math.round(checks.reduce((a,b) => a + b.score, 0) / checks.length)))
+    : 5;
+
+  return {
+    shotId, shotName: shots.find(s => s.id === shotId)?.name || shotId,
+    overallScore, checks, feedback, drills,
+    timestamp: new Date(), frameCount: frames.length
+  };
 }
 
-// RENDER RESULTS
+// ── Draw MediaPipe skeleton ──────────────────────────────────
+function drawSkeleton(lms) {
+  syncCanvas();
+  ctx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
+  const W = poseCanvas.width, H = poseCanvas.height;
+
+  const connections = [
+    [LM.L_SHOULDER,LM.R_SHOULDER],[LM.L_SHOULDER,LM.L_ELBOW],[LM.L_ELBOW,LM.L_WRIST],
+    [LM.R_SHOULDER,LM.R_ELBOW],[LM.R_ELBOW,LM.R_WRIST],
+    [LM.L_SHOULDER,LM.L_HIP],[LM.R_SHOULDER,LM.R_HIP],[LM.L_HIP,LM.R_HIP],
+    [LM.L_HIP,LM.L_KNEE],[LM.L_KNEE,LM.L_ANKLE],[LM.R_HIP,LM.R_KNEE],[LM.R_KNEE,LM.R_ANKLE],
+    [LM.NOSE,LM.L_SHOULDER],[LM.NOSE,LM.R_SHOULDER],
+    [LM.L_ANKLE,LM.L_HEEL],[LM.R_ANKLE,LM.R_HEEL],
+  ];
+
+  ctx.lineWidth = 2.5;
+  connections.forEach(([a,b]) => {
+    const ka = lms[a], kb = lms[b];
+    if (!ka||!kb||ka.visibility<0.35||kb.visibility<0.35) return;
+    ctx.strokeStyle = 'rgba(245,200,66,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(ka.x*W, ka.y*H);
+    ctx.lineTo(kb.x*W, kb.y*H);
+    ctx.stroke();
+  });
+
+  lms.forEach(kp => {
+    if (!kp||kp.visibility<0.35) return;
+    ctx.beginPath();
+    ctx.arc(kp.x*W, kp.y*H, 5, 0, 2*Math.PI);
+    ctx.fillStyle = '#F5C842';
+    ctx.shadowColor = '#F5C842';
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+}
+
+// ── Render results ───────────────────────────────────────────
 function renderResults(r) {
   const panel = document.getElementById('resultsPanel');
   const col = r.overallScore >= 8 ? '#3dd68c' : r.overallScore >= 6 ? '#F5C842' : '#e05c5c';
-  const scoreLabel = r.overallScore >= 8 ? 'Excellent Form' : r.overallScore >= 6 ? 'Good Form' : r.overallScore >= 4 ? 'Needs Work' : 'Major Issues';
-  const circumference = 2 * Math.PI * 34;
-  const offset = circumference - (r.overallScore / 10) * circumference;
+  const label = r.overallScore >= 8 ? 'Excellent' : r.overallScore >= 6 ? 'Good Form' : r.overallScore >= 4 ? 'Needs Work' : 'Major Issues';
+  const circ = 2*Math.PI*34;
+  const offset = circ - (r.overallScore/10)*circ;
 
-  let checksHTML = r.checks.map(c => {
-    const pct = c.score * 10;
-    const cls = c.status === 'good' ? 'fill-good' : c.status === 'ok' ? 'fill-ok' : 'fill-bad';
-    const valColor = c.status === 'good' ? 'var(--green)' : c.status === 'ok' ? 'var(--gold)' : 'var(--red)';
+  const checksHTML = r.checks.map(c => {
+    const pct = c.score*10;
+    const cls = c.status==='good'?'fill-good':c.status==='ok'?'fill-ok':'fill-bad';
+    const vc = c.status==='good'?'var(--green)':c.status==='ok'?'var(--gold)':'var(--red)';
     return `<div class="metric-row">
-      <div class="metric-top"><span class="metric-name">${c.label}</span><span class="metric-val" style="color:${valColor}">${c.score}/10 ${c.val !== 'N/A' ? '('+c.val+'°)' : ''}</span></div>
+      <div class="metric-top"><span class="metric-name">${c.label}</span><span class="metric-val" style="color:${vc}">${c.score}/10${c.val!=='N/A'?' ('+c.val+'°)':''}</span></div>
       <div class="metric-bar"><div class="metric-fill ${cls}" style="width:${pct}%"></div></div>
     </div>`;
   }).join('');
 
-  let feedbackHTML = r.feedback.map(f => `
-    <div class="fb-item fb-${f.type}">
-      <span class="fb-icon">${f.type==='good'?'✅':f.type==='warn'?'⚠️':'❌'}</span>
-      <div class="fb-text"><strong>${f.title}</strong><span>${f.msg}</span></div>
-    </div>`).join('');
+  const feedbackHTML = r.feedback.map(f =>
+    `<div class="fb-item fb-${f.type}"><span class="fb-icon">${f.type==='good'?'✅':f.type==='warn'?'⚠️':'❌'}</span>
+    <div class="fb-text"><strong>${f.title}</strong><span>${f.msg}</span></div></div>`
+  ).join('');
 
-  let drillsHTML = r.drills.length > 0 ? r.drills.slice(0,4).map(d =>
-    `<div class="drill-item"><div class="drill-title">🎯 ${d.title}</div><div class="drill-desc">${d.desc}</div></div>`
-  ).join('') : '<div style="color:var(--muted);font-size:0.8rem;">Great form! No specific drills needed right now.</div>';
+  const drillsHTML = r.drills.length > 0
+    ? r.drills.slice(0,5).map(d=>`<div class="drill-item"><div class="drill-title">🎯 ${d.title}</div><div class="drill-desc">${d.desc}</div></div>`).join('')
+    : '<div style="color:var(--muted);font-size:0.8rem;">Great form! No specific drills needed.</div>';
 
   panel.innerHTML = `
     <div class="panel-card">
@@ -774,92 +786,43 @@ function renderResults(r) {
         <div class="score-ring">
           <svg width="80" height="80" viewBox="0 0 80 80">
             <circle class="bg-circle" cx="40" cy="40" r="34"/>
-            <circle class="score-circle" cx="40" cy="40" r="34" stroke="${col}"
-              stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+            <circle class="score-circle" cx="40" cy="40" r="34" stroke="${col}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
           </svg>
           <div class="score-num" style="color:${col}">${r.overallScore}</div>
         </div>
         <div class="score-info">
-          <div class="score-label" style="color:${col}">${scoreLabel}</div>
-          <div class="score-sub">${r.shotName} · ${r.checks.length} metrics analyzed<br/>${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+          <div class="score-label" style="color:${col}">${label}</div>
+          <div class="score-sub">${r.shotName} · ${r.checks.length} checks · ${r.frameCount} frames<br/>${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
         </div>
       </div>
     </div>
-    <div class="panel-card">
-      <div class="panel-title">Technique Metrics</div>
-      <div class="metrics-list">${checksHTML}</div>
-    </div>
-    <div class="panel-card">
-      <div class="panel-title">Feedback</div>
-      <div class="feedback-list">${feedbackHTML}</div>
-    </div>
-    <div class="panel-card">
-      <div class="panel-title">Recommended Drills</div>
-      <div class="drills-list">${drillsHTML}</div>
-    </div>
+    <div class="panel-card"><div class="panel-title">Phase Metrics</div><div class="metrics-list">${checksHTML}</div></div>
+    <div class="panel-card"><div class="panel-title">Feedback</div><div class="feedback-list">${feedbackHTML}</div></div>
+    <div class="panel-card"><div class="panel-title">Drills to Improve</div><div class="drills-list">${drillsHTML}</div></div>
   `;
 }
 
-// DRAW POSE SKELETON
-function drawPose(pose) {
-  syncCanvasSize();
-  ctx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
-  const scaleX = poseCanvas.width / (videoEl.videoWidth || poseCanvas.width);
-  const scaleY = poseCanvas.height / (videoEl.videoHeight || poseCanvas.height);
-
-  const connections = [
-    ['left_shoulder','right_shoulder'],['left_shoulder','left_elbow'],['left_elbow','left_wrist'],
-    ['right_shoulder','right_elbow'],['right_elbow','right_wrist'],
-    ['left_shoulder','left_hip'],['right_shoulder','right_hip'],['left_hip','right_hip'],
-    ['left_hip','left_knee'],['left_knee','left_ankle'],['right_hip','right_knee'],['right_knee','right_ankle'],
-    ['nose','left_shoulder'],['nose','right_shoulder'],
-  ];
-
-  ctx.strokeStyle = 'rgba(245,200,66,0.8)';
-  ctx.lineWidth = 2;
-  connections.forEach(([a,b]) => {
-    const ka = getKp(pose, a), kb = getKp(pose, b);
-    if (!ka || !kb || ka.score < 0.25 || kb.score < 0.25) return;
-    ctx.beginPath();
-    ctx.moveTo(ka.x * scaleX, ka.y * scaleY);
-    ctx.lineTo(kb.x * scaleX, kb.y * scaleY);
-    ctx.stroke();
-  });
-
-  pose.keypoints.forEach(kp => {
-    if (kp.score < 0.25) return;
-    ctx.beginPath();
-    ctx.arc(kp.x * scaleX, kp.y * scaleY, 4, 0, 2 * Math.PI);
-    ctx.fillStyle = '#F5C842';
-    ctx.fill();
-  });
-}
-
-// SESSION HISTORY
+// ── Session history ──────────────────────────────────────────
 function addToHistory(result) {
   analysisHistory.unshift(result);
   renderHistory();
   document.getElementById('historySection').classList.add('show');
 }
-
 function renderHistory() {
   const grid = document.getElementById('historyGrid');
   grid.innerHTML = '';
   analysisHistory.slice(0, 6).forEach(r => {
-    const col = r.overallScore >= 8 ? '#3dd68c' : r.overallScore >= 6 ? '#F5C842' : '#e05c5c';
+    const col = r.overallScore>=8?'#3dd68c':r.overallScore>=6?'#F5C842':'#e05c5c';
     const card = document.createElement('div');
     card.className = 'history-card';
     card.innerHTML = `
       <div class="hc-top"><span class="hc-shot">${r.shotName}</span><span class="hc-score" style="color:${col}">${r.overallScore}/10</span></div>
       <div class="hc-date">${r.timestamp.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
-      <div class="hc-bars">
-        ${r.checks.slice(0,5).map(c=>{
-          const h=Math.round((c.score/10)*100)+'%';
-          const bg=c.status==='good'?'var(--green)':c.status==='ok'?'var(--gold)':'var(--red)';
-          return `<div class="hc-bar"><div class="hc-bar-fill" style="height:${h};background:${bg}"></div></div>`;
-        }).join('')}
-      </div>
-    `;
+      <div class="hc-bars">${r.checks.slice(0,5).map(c=>{
+        const h=Math.round((c.score/10)*100)+'%';
+        const bg=c.status==='good'?'var(--green)':c.status==='ok'?'var(--gold)':'var(--red)';
+        return `<div class="hc-bar"><div class="hc-bar-fill" style="height:${h};background:${bg}"></div></div>`;
+      }).join('')}</div>`;
     grid.appendChild(card);
   });
 }
