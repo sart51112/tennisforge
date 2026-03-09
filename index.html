@@ -391,7 +391,7 @@ let selectedShot = 'forehand';
 let detector = null;
 let analysisHistory = [];
 let isAnalyzing = false;
-let videoEl, poseCanvas, ctx;
+let videoEl = null, poseCanvas = null, ctx = null;
 
 // RENDER SHOT BUTTONS
 const shotGrid = document.getElementById('shotGrid');
@@ -423,6 +423,9 @@ window.addEventListener('DOMContentLoaded', () => {
   videoEl = document.getElementById('videoEl');
   poseCanvas = document.getElementById('poseCanvas');
   ctx = poseCanvas.getContext('2d');
+  // make analyzeBtn work via onclick attribute too
+  window.startAnalysis = startAnalysis;
+  window.resetAnalysis = resetAnalysis;
 
   const fileInput = document.getElementById('fileInput');
   fileInput.addEventListener('change', e => {
@@ -494,83 +497,79 @@ function resetAnalysis() {
 // LOAD TENSORFLOW MODEL
 async function loadDetector() {
   if (detector) return detector;
-  setStatus('analyzing', 'Loading pose detection model (first time only)...');
-  try {
-    detector = await poseDetection.createDetector(
-      poseDetection.SupportedModels.MoveNet,
-      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
-    );
-    return detector;
-  } catch(e) {
-    setStatus('ready', 'Model load error — trying lightweight model');
-    detector = await poseDetection.createDetector(
-      poseDetection.SupportedModels.MoveNet,
-      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-    );
-    return detector;
+  setStatus('analyzing', 'Loading pose model — first time takes 10-20 seconds...');
+  let waited = 0;
+  while (typeof tf === 'undefined' || typeof poseDetection === 'undefined') {
+    await new Promise(r => setTimeout(r, 400));
+    waited += 400;
+    if (waited > 20000) throw new Error('TensorFlow.js did not load — check internet connection');
   }
+  try { await tf.setBackend('webgl'); } catch(e) { await tf.setBackend('cpu'); }
+  await tf.ready();
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+  );
+  return detector;
 }
 
 // ANALYSIS
 async function startAnalysis() {
   if (isAnalyzing) return;
-  if (!videoEl.src) { setStatus('ready', 'Please upload a video first'); return; }
-
+  videoEl = document.getElementById('videoEl');
+  poseCanvas = document.getElementById('poseCanvas');
+  ctx = poseCanvas.getContext('2d');
+  if (!videoEl.src || videoEl.readyState < 1) {
+    setStatus('ready', 'Please upload a video first'); return;
+  }
   isAnalyzing = true;
   const btn = document.getElementById('analyzeBtn');
-  btn.textContent = '⏳ Analyzing...';
+  btn.textContent = '⏳ Loading model...';
   btn.classList.add('analyzing');
-  setStatus('analyzing', 'Initializing pose detection model...');
-
+  setStatus('analyzing', 'Loading pose model — wait 10-20 seconds first time...');
   try {
     await loadDetector();
-    setStatus('analyzing', 'Analyzing your ' + selectedShot + ' — scanning frames...');
-
-    // Sample frames across the video
+    setStatus('analyzing', 'Model ready! Scanning your ' + selectedShot + '...');
+    btn.textContent = '⏳ Analyzing...';
+    if (!videoEl.duration || isNaN(videoEl.duration)) {
+      await new Promise(r => { videoEl.onloadedmetadata = r; setTimeout(r, 3000); });
+    }
+    const duration = videoEl.duration || 3;
+    const numFrames = Math.max(5, Math.min(10, Math.floor(duration * 2)));
     const frames = [];
-    const numFrames = Math.min(12, Math.floor(videoEl.duration * 3));
-    const interval = videoEl.duration / numFrames;
-
     for (let i = 0; i < numFrames; i++) {
-      videoEl.currentTime = interval * i + interval * 0.3;
-      await new Promise(r => { videoEl.onseeked = r; });
-      await new Promise(r => setTimeout(r, 80));
-
+      const t = (duration / numFrames) * i + 0.1;
+      videoEl.currentTime = Math.min(t, duration - 0.1);
+      await new Promise(r => {
+        const fn = () => { videoEl.removeEventListener('seeked', fn); r(); };
+        videoEl.addEventListener('seeked', fn);
+        setTimeout(r, 2000);
+      });
+      await new Promise(r => setTimeout(r, 150));
       try {
-        const poses = await detector.estimatePoses(videoEl, { flipHorizontal: false });
-        if (poses.length > 0) frames.push(poses[0]);
-      } catch(e) {}
-
+        const poses = await detector.estimatePoses(videoEl);
+        if (poses && poses.length > 0) frames.push(poses[0]);
+      } catch(e) { console.warn('frame err', e); }
       document.getElementById('progressFill').style.width = ((i+1)/numFrames*100) + '%';
-      setStatus('analyzing', `Analyzing frame ${i+1} of ${numFrames}...`);
+      setStatus('analyzing', `Scanning frame ${i+1} of ${numFrames}...`);
     }
-
-    if (frames.length === 0) {
-      setStatus('ready', 'Could not detect a person — ensure full body is visible in the video');
-      btn.textContent = '⚡ Analyze Shot';
-      btn.classList.remove('analyzing');
-      isAnalyzing = false;
-      return;
+    if (frames.length > 0) {
+      const best = frames.reduce((a,b) =>
+        a.keypoints.reduce((s,k)=>s+k.score,0) > b.keypoints.reduce((s,k)=>s+k.score,0) ? a : b
+      );
+      drawPose(best);
+    } else {
+      setStatus('ready', 'Body not fully visible — film full body from the side. Showing form checklist.');
     }
-
-    // Draw pose on best frame (last detected)
-    const best = frames[frames.length - 1];
-    drawPose(best);
-
-    // Compute metrics
     const metrics = computeMetrics(frames);
     const result = generateResult(metrics, selectedShot, frames.length);
-
     renderResults(result);
     addToHistory(result);
-
     setStatus('done', `Analysis complete — ${result.overallScore}/10 on your ${selectedShot}`);
-
   } catch(e) {
     console.error(e);
-    setStatus('ready', 'Analysis error: ' + e.message + ' — try a shorter, clearer video');
+    setStatus('ready', 'Error: ' + (e.message||'unknown') + ' — try a shorter MP4 video');
   }
-
   btn.textContent = '⚡ Analyze Shot';
   btn.classList.remove('analyzing');
   isAnalyzing = false;
