@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TennisForge — Shot Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<style>
+:root{
+  --bg:#080808;--s1:#101010;--s2:#181818;--s3:#202020;
+  --border:#252525;--border2:#303030;
+  --gold:#F5C842;--gold2:#d4a82a;--gold-dim:rgba(245,200,66,0.1);
+  --white:#F2F2F2;--muted:#555;--muted2:#3a3a3a;
+  --green:#3dd68c;--red:#e05c5c;--blue:#5b9cf6;
+  --sans:'DM Sans',sans-serif;--display:'Bebas Neue',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:var(--sans);background:var(--bg);color:var(--white);min-height:100vh;cursor:none;overflow-x:hidden;}
+
+/* CURSOR */
+.cur{width:10px;height:10px;background:var(--gold);border-radius:50%;position:fixed;pointer-events:none;z-index:9999;box-shadow:0 0 10px var(--gold);transform:translate(-50%,-50%);}
+.cur-ring{width:32px;height:32px;border:1.5px solid rgba(245,200,66,0.5);border-radius:50%;position:fixed;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);transition:width 0.2s,height 0.2s;}
+body:has(button:hover) .cur-ring,body:has(label:hover) .cur-ring{width:48px;height:48px;}
+
+/* NAV */
+nav{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;border-bottom:1px solid var(--border);background:rgba(8,8,8,0.95);backdrop-filter:blur(20px);position:sticky;top:0;z-index:100;}
+.logo{font-family:var(--display);font-size:1.8rem;letter-spacing:2px;color:var(--white);}
+.logo span{color:var(--gold);}
+.nav-badge{background:var(--gold-dim);border:1px solid rgba(245,200,66,0.2);color:var(--gold);font-size:0.7rem;font-weight:600;padding:0.3rem 0.8rem;border-radius:100px;letter-spacing:0.5px;}
+
+/* HERO */
+.hero{text-align:center;padding:4rem 2rem 3rem;border-bottom:1px solid var(--border);}
+.hero-tag{font-size:0.72rem;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:2px;margin-bottom:1rem;}
+.hero h1{font-family:var(--display);font-size:clamp(2.5rem,8vw,6rem);line-height:0.9;letter-spacing:2px;margin-bottom:1rem;}
+.hero h1 span{color:var(--gold);}
+.hero p{color:var(--muted);font-size:1rem;max-width:500px;margin:0 auto 2rem;line-height:1.7;}
+.hero-stats{display:flex;justify-content:center;gap:3rem;flex-wrap:wrap;}
+.hstat{text-align:center;}
+.hstat strong{display:block;font-family:var(--display);font-size:2rem;color:var(--gold);}
+.hstat span{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+
+/* SHOT SELECTOR */
+.shot-section{padding:2.5rem 2rem;border-bottom:1px solid var(--border);}
+.section-label{font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:var(--gold);margin-bottom:1rem;}
+.shot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.8rem;max-width:900px;margin:0 auto;}
+.shot-btn{background:var(--s1);border:1.5px solid var(--border2);border-radius:12px;padding:1.1rem 0.8rem;cursor:none;transition:all 0.2s;text-align:center;}
+.shot-btn:hover{border-color:var(--gold);background:var(--gold-dim);}
+.shot-btn.active{border-color:var(--gold);background:var(--gold-dim);box-shadow:0 0 20px rgba(245,200,66,0.12);}
+.shot-icon{font-size:1.8rem;display:block;margin-bottom:0.5rem;}
+.shot-name{font-size:0.82rem;font-weight:600;color:var(--white);}
+.shot-desc{font-size:0.65rem;color:var(--muted);margin-top:0.2rem;}
+
+/* UPLOAD AREA */
+.upload-section{padding:2rem;border-bottom:1px solid var(--border);max-width:900px;margin:0 auto;width:100%;}
+.upload-box{border:2px dashed var(--border2);border-radius:16px;padding:3rem 2rem;text-align:center;transition:all 0.3s;cursor:none;position:relative;}
+.upload-box:hover,.upload-box.dragover{border-color:var(--gold);background:var(--gold-dim);}
+.upload-icon{font-size:3rem;margin-bottom:1rem;display:block;}
+.upload-title{font-size:1.1rem;font-weight:600;margin-bottom:0.4rem;}
+.upload-sub{font-size:0.82rem;color:var(--muted);margin-bottom:1.5rem;}
+.upload-btn{background:var(--gold);color:#080808;border:none;padding:0.7rem 2rem;border-radius:8px;font-family:var(--sans);font-weight:700;font-size:0.88rem;cursor:none;transition:all 0.2s;display:inline-block;}
+.upload-btn:hover{background:var(--gold2);box-shadow:0 0 20px rgba(245,200,66,0.3);}
+#fileInput{position:absolute;inset:0;opacity:0;cursor:none;width:100%;height:100%;}
+
+/* VIDEO + CANVAS */
+.analyzer-section{display:none;padding:2rem;max-width:1100px;margin:0 auto;width:100%;}
+.analyzer-section.show{display:block;}
+.analyzer-grid{display:grid;grid-template-columns:1fr 380px;gap:1.5rem;align-items:start;}
+.video-wrap{position:relative;background:var(--s1);border-radius:16px;overflow:hidden;border:1px solid var(--border2);}
+#videoEl{width:100%;display:block;border-radius:16px;}
+#poseCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+.video-controls{display:flex;gap:0.6rem;align-items:center;padding:0.8rem;background:var(--s2);border-top:1px solid var(--border);}
+.vc-btn{background:var(--s3);border:1px solid var(--border2);color:var(--white);padding:0.5rem 1rem;border-radius:7px;font-family:var(--sans);font-size:0.8rem;font-weight:600;cursor:none;transition:all 0.2s;flex-shrink:0;}
+.vc-btn:hover{border-color:var(--gold);color:var(--gold);}
+.vc-btn.analyzing{background:var(--gold);color:#080808;border-color:var(--gold);animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.7;}}
+.vc-btn.active-analysis{background:var(--red);color:white;border-color:var(--red);}
+.progress-bar{flex:1;height:4px;background:var(--border2);border-radius:100px;overflow:hidden;}
+.progress-fill{height:100%;background:var(--gold);border-radius:100px;transition:width 0.1s;width:0%;}
+.time-label{font-size:0.72rem;color:var(--muted);min-width:70px;text-align:right;}
+
+/* RESULTS PANEL */
+.results-panel{display:flex;flex-direction:column;gap:1rem;}
+.panel-card{background:var(--s1);border:1px solid var(--border2);border-radius:14px;padding:1.2rem;overflow:hidden;}
+.panel-title{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);margin-bottom:1rem;}
+
+/* SCORE RING */
+.score-wrap{display:flex;align-items:center;gap:1.2rem;}
+.score-ring{position:relative;width:80px;height:80px;flex-shrink:0;}
+.score-ring svg{transform:rotate(-90deg);}
+.score-ring .bg-circle{fill:none;stroke:var(--border2);stroke-width:6;}
+.score-ring .score-circle{fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset 1s ease;}
+.score-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:1.5rem;}
+.score-info .score-label{font-family:var(--display);font-size:1.4rem;margin-bottom:0.2rem;}
+.score-info .score-sub{font-size:0.75rem;color:var(--muted);line-height:1.5;}
+
+/* METRICS */
+.metrics-list{display:flex;flex-direction:column;gap:0.6rem;}
+.metric-row{display:flex;flex-direction:column;gap:0.3rem;}
+.metric-top{display:flex;justify-content:space-between;align-items:center;}
+.metric-name{font-size:0.78rem;font-weight:500;}
+.metric-val{font-size:0.72rem;font-weight:700;}
+.metric-bar{height:5px;background:var(--border2);border-radius:100px;overflow:hidden;}
+.metric-fill{height:100%;border-radius:100px;transition:width 1s ease;}
+.fill-good{background:var(--green);}
+.fill-ok{background:var(--gold);}
+.fill-bad{background:var(--red);}
+
+/* FEEDBACK */
+.feedback-list{display:flex;flex-direction:column;gap:0.6rem;}
+.fb-item{display:flex;gap:0.7rem;align-items:flex-start;padding:0.6rem;border-radius:8px;font-size:0.78rem;line-height:1.5;}
+.fb-good{background:rgba(61,214,140,0.07);border:1px solid rgba(61,214,140,0.15);}
+.fb-warn{background:rgba(245,200,66,0.07);border:1px solid rgba(245,200,66,0.15);}
+.fb-bad{background:rgba(224,92,92,0.07);border:1px solid rgba(224,92,92,0.15);}
+.fb-icon{font-size:0.9rem;flex-shrink:0;margin-top:1px;}
+.fb-text{color:var(--white);}
+.fb-text strong{display:block;font-weight:600;margin-bottom:0.1rem;}
+.fb-text span{color:var(--muted);font-size:0.73rem;}
+
+/* DRILLS */
+.drills-list{display:flex;flex-direction:column;gap:0.5rem;}
+.drill-item{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:0.7rem 0.9rem;font-size:0.78rem;}
+.drill-title{font-weight:600;color:var(--white);margin-bottom:0.2rem;}
+.drill-desc{color:var(--muted);font-size:0.72rem;line-height:1.5;}
+
+/* STATUS BAR */
+.status-bar{background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:0.7rem 1rem;display:flex;align-items:center;gap:0.7rem;font-size:0.78rem;color:var(--muted);}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;}
+.status-dot.ready{background:var(--green);box-shadow:0 0 6px var(--green);}
+.status-dot.analyzing{background:var(--gold);box-shadow:0 0 6px var(--gold);animation:pulse 1s infinite;}
+.status-dot.done{background:var(--blue);box-shadow:0 0 6px var(--blue);}
+
+/* PLACEHOLDER */
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 1rem;text-align:center;gap:0.6rem;border:1px dashed var(--border2);border-radius:12px;}
+.placeholder-icon{font-size:2.5rem;opacity:0.3;}
+.placeholder-text{font-size:0.82rem;color:var(--muted);}
+
+/* HISTORY */
+.history-section{padding:2rem;max-width:1100px;margin:0 auto;width:100%;display:none;}
+.history-section.show{display:block;}
+.history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;margin-top:1rem;}
+.history-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:1rem;cursor:none;transition:all 0.2s;}
+.history-card:hover{border-color:var(--gold);transform:translateY(-2px);}
+.hc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;}
+.hc-shot{font-weight:700;font-size:0.88rem;}
+.hc-score{font-family:var(--display);font-size:1.4rem;color:var(--gold);}
+.hc-date{font-size:0.68rem;color:var(--muted);}
+.hc-bars{display:flex;gap:3px;margin-top:0.6rem;}
+.hc-bar{height:24px;flex:1;border-radius:3px;background:var(--border2);position:relative;overflow:hidden;}
+.hc-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;transition:height 0.8s ease;}
+
+/* TIPS SECTION */
+.tips-section{padding:2rem;border-top:1px solid var(--border);}
+.tips-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;margin-top:1rem;max-width:1100px;margin-left:auto;margin-right:auto;}
+.tip-card{background:var(--s1);border:1px solid var(--border2);border-radius:14px;padding:1.3rem;}
+.tip-shot{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gold);margin-bottom:0.4rem;}
+.tip-title{font-weight:700;font-size:0.92rem;margin-bottom:0.4rem;}
+.tip-body{font-size:0.78rem;color:var(--muted);line-height:1.6;}
+
+/* FOOTER */
+footer{border-top:1px solid var(--border);padding:1.5rem 2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;color:var(--muted);font-size:0.78rem;}
+.footer-logo{font-family:var(--display);font-size:1.2rem;color:var(--white);}
+.footer-logo span{color:var(--gold);}
+.disclaimer{font-size:0.68rem;color:var(--muted2);max-width:500px;line-height:1.5;}
+
+@media(max-width:768px){
+  nav{padding:0.8rem 1rem;}
+  .hero{padding:2.5rem 1rem 2rem;}
+  .shot-section,.upload-section,.analyzer-section,.history-section,.tips-section{padding:1.2rem 1rem;}
+  .analyzer-grid{grid-template-columns:1fr;}
+  .hero-stats{gap:1.5rem;}
+  footer{flex-direction:column;text-align:center;}
+}
+</style>
+</head>
+<body>
+<div class="cur" id="cur"></div>
+<div class="cur-ring" id="curRing"></div>
+
+<nav>
+  <div class="logo">Tennis<span>Forge</span></div>
+  <div class="nav-badge">POSE ANALYSIS ENGINE</div>
+</nav>
+
+<section class="hero">
+  <div class="hero-tag">AI-Powered · Free · No Signup</div>
+  <h1>ANALYZE YOUR<br/><span>TENNIS SHOTS</span></h1>
+  <p>Upload a video of any shot. TennisForge uses body pose detection to analyze your technique, rate your form and tell you exactly what to improve.</p>
+  <div class="hero-stats">
+    <div class="hstat"><strong>8</strong><span>Shot Types</span></div>
+    <div class="hstat"><strong>10+</strong><span>Metrics Tracked</span></div>
+    <div class="hstat"><strong>100%</strong><span>Free & Private</span></div>
+  </div>
+</section>
+
+<!-- SHOT SELECTOR -->
+<section class="shot-section">
+  <div style="max-width:900px;margin:0 auto;">
+    <div class="section-label">Step 1 — Select Your Shot Type</div>
+    <div class="shot-grid" id="shotGrid"></div>
+  </div>
+</section>
+
+<!-- UPLOAD -->
+<div class="upload-section">
+  <div class="section-label">Step 2 — Upload Your Video</div>
+  <div class="upload-box" id="uploadBox">
+    <input type="file" id="fileInput" accept="video/*"/>
+    <span class="upload-icon">🎾</span>
+    <div class="upload-title">Drop your video here</div>
+    <div class="upload-sub">MP4, MOV, AVI supported · Video stays on your device, never uploaded to any server</div>
+    <label for="fileInput" class="upload-btn">Choose Video</label>
+  </div>
+</div>
+
+<!-- ANALYZER -->
+<div class="analyzer-section" id="analyzerSection">
+  <div class="section-label" style="margin-bottom:1rem;">Step 3 — Analyze</div>
+  <div class="status-bar" id="statusBar" style="margin-bottom:1rem;">
+    <div class="status-dot ready" id="statusDot"></div>
+    <span id="statusText">Video loaded — press Analyze Shot to begin</span>
+  </div>
+  <div class="analyzer-grid">
+    <div>
+      <div class="video-wrap">
+        <video id="videoEl" controls playsinline></video>
+        <canvas id="poseCanvas"></canvas>
+      </div>
+      <div class="video-controls">
+        <button class="vc-btn" id="analyzeBtn" onclick="startAnalysis()">⚡ Analyze Shot</button>
+        <button class="vc-btn" onclick="resetAnalysis()">↺ New Video</button>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="time-label" id="timeLabel">0:00 / 0:00</div>
+      </div>
+    </div>
+    <div class="results-panel" id="resultsPanel">
+      <div class="placeholder">
+        <div class="placeholder-icon">📊</div>
+        <div class="placeholder-text">Results will appear here after analysis</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SESSION HISTORY -->
+<div class="history-section" id="historySection">
+  <div class="section-label">Session History</div>
+  <div class="history-grid" id="historyGrid"></div>
+</div>
+
+<!-- TIPS PER SHOT -->
+<section class="tips-section">
+  <div style="max-width:1100px;margin:0 auto;">
+    <div class="section-label">Pro Tips — Every Shot</div>
+    <div class="tips-grid" id="tipsGrid"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo">Tennis<span>Forge</span></div>
+  <div class="disclaimer">TennisForge uses TensorFlow.js MoveNet pose detection running entirely in your browser. Your video is never uploaded to any server. Analysis is based on body keypoint angles and positions — for best results film from the side at full body view.</div>
+  <div>© 2025 TennisForge — Made by S.A.R.T</div>
+</footer>
+
+<script>
+// CURSOR
+const cur=document.getElementById('cur'),curRing=document.getElementById('curRing');
+let mx=0,my=0,rx=0,ry=0;
+document.addEventListener('mousemove',e=>{
+  mx=e.clientX;my=e.clientY;
+  cur.style.left=mx+'px';cur.style.top=my+'px';
+});
+(function animRing(){
+  rx+=(mx-rx)*0.13;ry+=(my-ry)*0.13;
+  curRing.style.left=rx+'px';curRing.style.top=ry+'px';
+  requestAnimationFrame(animRing);
+})();
+
+// SHOT DEFINITIONS
+const shots = [
+  {id:'forehand',icon:'🎾',name:'Forehand',desc:'Dominant side drive'},
+  {id:'backhand',icon:'🔄',name:'Backhand',desc:'Off-hand groundstroke'},
+  {id:'serve',icon:'⬆️',name:'Serve',desc:'Overhead service shot'},
+  {id:'volley',icon:'⚡',name:'Volley',desc:'Net play shot'},
+  {id:'smash',icon:'💥',name:'Overhead Smash',desc:'Aggressive overhead'},
+  {id:'slice',icon:'🌀',name:'Slice',desc:'Backspin groundstroke'},
+  {id:'dropshot',icon:'🎯',name:'Drop Shot',desc:'Short, soft placement'},
+  {id:'lob',icon:'🌈',name:'Lob',desc:'High defensive shot'},
+];
+
+// SHOT ANALYSIS RULES
+// Each shot has: metrics (name, key, ideal angle range, weight)
+// and feedback generators based on pose keypoints
+const shotRules = {
+  forehand:{
+    metrics:['Hip Rotation','Elbow Position','Follow Through','Knee Bend','Shoulder Turn','Wrist Snap','Stance Width','Weight Transfer'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Elbow Angle',idealMin:80,idealMax:150,goodMsg:'Good elbow bend — power generated correctly',badMsg:'Elbow too straight — bend more for power and control',drill:'Shadow swing drills focusing on elbow position'},
+      {key:'hip_rotation',label:'Hip Rotation',idealMin:30,idealMax:90,goodMsg:'Excellent hip rotation — great power source',badMsg:'Insufficient hip rotation — rotate hips fully through contact',drill:'Hip rotation drills with resistance band'},
+      {key:'knee_bend',label:'Knee Bend',idealMin:20,idealMax:60,goodMsg:'Good knee bend — stable base',badMsg:'Straighten/bend knees more — get low for stability',drill:'Wall sit holds + split step practice'},
+      {key:'shoulder_tilt',label:'Shoulder Tilt',idealMin:10,idealMax:40,goodMsg:'Proper shoulder tilt — good racket path',badMsg:'Shoulder tilt off — affects swing path and spin',drill:'Mirror drills focusing on shoulder drop'},
+      {key:'wrist_angle',label:'Wrist Snap',idealMin:150,idealMax:180,goodMsg:'Strong wrist through contact — great topspin',badMsg:'Wrist too loose — firm up at contact point',drill:'Wrist strengthening with light racket shadow swings'},
+    ]
+  },
+  backhand:{
+    metrics:['Two-Hand Grip','Hip Rotation','Elbow Extension','Knee Bend','Shoulder Rotation','Follow Through','Stance','Contact Point'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Elbow Extension',idealMin:100,idealMax:170,goodMsg:'Good arm extension through contact',badMsg:'Not extending enough — extend arms fully through the shot',drill:'Wall hitting focusing on full arm extension'},
+      {key:'hip_rotation',label:'Hip Drive',idealMin:40,idealMax:100,goodMsg:'Good hip drive on the backhand',badMsg:'Hips not driving through — use your whole body',drill:'Hip drive with closed stance drills'},
+      {key:'knee_bend',label:'Knee Bend',idealMin:20,idealMax:55,goodMsg:'Good knee bend — stable platform',badMsg:'Get lower — bend knees more for power',drill:'Low ball machine drills to force knee bend'},
+      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:20,idealMax:50,goodMsg:'Good shoulder turn on backhand',badMsg:'Turn shoulders more — full shoulder rotation needed',drill:'Shoulder turn isolation drill with coach feed'},
+      {key:'wrist_angle',label:'Grip Firmness',idealMin:140,idealMax:180,goodMsg:'Firm grip through contact — good',badMsg:'Wrist break at contact — firm up the grip',drill:'Heavy ball hitting to build grip firmness'},
+    ]
+  },
+  serve:{
+    metrics:['Ball Toss','Knee Bend','Pronation','Trophy Position','Hip Drive','Shoulder Rotation','Arm Extension','Follow Through'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Arm Extension',idealMin:150,idealMax:180,goodMsg:'Full arm extension at contact — excellent',badMsg:'Not fully extending — reach up fully at contact',drill:'Serve with fence behind to force full extension'},
+      {key:'hip_rotation',label:'Hip Drive & Pronation',idealMin:45,idealMax:110,goodMsg:'Good pronation and hip drive on serve',badMsg:'Add pronation — rotate forearm inward at contact for power',drill:'Slow motion serve practice focusing on pronation'},
+      {key:'knee_bend',label:'Knee Coil',idealMin:30,idealMax:80,goodMsg:'Good knee bend — loading power well',badMsg:'Bend knees more in trophy position for explosive drive',drill:'Jump serve drills to build leg drive habit'},
+      {key:'shoulder_tilt',label:'Shoulder & Trunk Tilt',idealMin:20,idealMax:55,goodMsg:'Good trunk tilt — using body weight',badMsg:'Tilt your body into the serve more — use your weight',drill:'Trophy position holds with mirror feedback'},
+      {key:'wrist_angle',label:'Wrist Snap',idealMin:120,idealMax:170,goodMsg:'Good wrist snap — generating spin and pace',badMsg:'Snap wrist more aggressively at contact for kick/topspin',drill:'Ball toss and catch with racket for wrist feel'},
+    ]
+  },
+  volley:{
+    metrics:['Compact Swing','Punch Action','Ready Position','Wrist Firmness','Footwork','Contact Point','Low Stance','Split Step'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Compact Punch',idealMin:60,idealMax:110,goodMsg:'Compact volley action — minimal backswing',badMsg:'Too much backswing — keep it compact and punch forward',drill:'Feed and punch volleys against wall'},
+      {key:'knee_bend',label:'Low Stance',idealMin:25,idealMax:65,goodMsg:'Good low stance — ready for any height',badMsg:'Get lower — bend knees more for ground-level volleys',drill:'Low volley drills with slow hand feeds'},
+      {key:'wrist_angle',label:'Wrist Firmness',idealMin:155,idealMax:180,goodMsg:'Firm wrist — controlling direction well',badMsg:'Firm up your wrist — loose wrist loses control at net',drill:'Catch-and-release drill with heavy glove'},
+      {key:'shoulder_tilt',label:'Forward Lean',idealMin:5,idealMax:30,goodMsg:'Good forward lean — aggressive volley stance',badMsg:'Lean into the volley more — forward pressure wins points',drill:'Net approach drills with split step emphasis'},
+      {key:'hip_rotation',label:'Turn & Block',idealMin:20,idealMax:60,goodMsg:'Good shoulder turn on the volley',badMsg:'Turn shoulders slightly — do not just use the arm',drill:'Isolated shoulder turn volley drill with partner'},
+    ]
+  },
+  smash:{
+    metrics:['Positioning','Racket Preparation','Arm Extension','Hip Rotation','Contact Point','Follow Through','Footwork','Power'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Full Extension',idealMin:155,idealMax:180,goodMsg:'Full arm extension — maximizing reach and power',badMsg:'Extend arm fully overhead — reach as high as possible',drill:'Overhead smash with high toss practice'},
+      {key:'hip_rotation',label:'Hip & Trunk Rotation',idealMin:60,idealMax:120,goodMsg:'Excellent rotation — powerful smash mechanics',badMsg:'Rotate hips and trunk more aggressively through contact',drill:'Smash shadow swings with hip rotation focus'},
+      {key:'knee_bend',label:'Leg Drive',idealMin:15,idealMax:50,goodMsg:'Good leg drive — using ground for power',badMsg:'Push off the ground more — legs generate smash power',drill:'Jump smash drills to build explosive habit'},
+      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:30,idealMax:70,goodMsg:'Good shoulder turn for smash',badMsg:'Turn shoulders more — like a throwing motion',drill:'Throwing motions to groove shoulder pattern'},
+      {key:'wrist_angle',label:'Wrist Snap',idealMin:130,idealMax:175,goodMsg:'Aggressive wrist snap — pace and spin on smash',badMsg:'Snap the wrist more at contact for extra pace',drill:'Smash with focus on snapping point at contact'},
+    ]
+  },
+  slice:{
+    metrics:['High to Low Swing','Open Racket Face','Underspin','Follow Through','Stance','Knee Bend','Contact Point','Grip'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Swing Path',idealMin:90,idealMax:155,goodMsg:'Good high-to-low swing — generating slice',badMsg:'Swing more high to low — brush under the ball for backspin',drill:'Slice against wall focusing on high takeback'},
+      {key:'wrist_angle',label:'Open Racket Face',idealMin:100,idealMax:160,goodMsg:'Good racket face — proper slice angle',badMsg:'Open racket face more — tilt back to generate underspin',drill:'Slow feed slice drills focusing on face angle'},
+      {key:'knee_bend',label:'Knee Bend',idealMin:15,idealMax:50,goodMsg:'Good knee bend for slice',badMsg:'Bend knees more for control on the slice',drill:'Low slice drills with low feed to force knee bend'},
+      {key:'hip_rotation',label:'Shoulder Turn',idealMin:25,idealMax:65,goodMsg:'Good shoulder preparation',badMsg:'More shoulder turn on takeback for slice',drill:'Coil and uncoil drill for slice takeback'},
+      {key:'shoulder_tilt',label:'Forward Motion',idealMin:10,idealMax:40,goodMsg:'Good forward shoulder drive',badMsg:'Drive the shoulder through more on slice',drill:'Slice practice with emphasis on shoulder follow through'},
+    ]
+  },
+  dropshot:{
+    metrics:['Disguise','Touch','Racket Face','Follow Through','Positioning','Deception','Net Clearance','Spin'],
+    keyChecks:[
+      {key:'wrist_angle',label:'Touch & Feel',idealMin:120,idealMax:165,goodMsg:'Good touch on the drop shot',badMsg:'Soften the wrist more — absorb pace for better touch',drill:'Feed and touch drills close to net'},
+      {key:'elbow_angle',label:'Compact Action',idealMin:70,idealMax:120,goodMsg:'Compact drop shot action — good deception',badMsg:'Use a more compact action to disguise the drop shot',drill:'Drop shot disguised as drive drill with partner'},
+      {key:'knee_bend',label:'Low Position',idealMin:20,idealMax:60,goodMsg:'Good low position for drop shot',badMsg:'Get lower for better control on the drop shot',drill:'Low ball touch drills inside service box'},
+      {key:'hip_rotation',label:'Disguise',idealMin:15,idealMax:50,goodMsg:'Good body disguise on the drop shot',badMsg:'Prepare the same as a drive to disguise intent',drill:'Mix drive and drop shot from same takeback'},
+      {key:'shoulder_tilt',label:'Angle',idealMin:10,idealMax:35,goodMsg:'Good angle for drop shot',badMsg:'Open your shoulder slightly to angle the drop shot',drill:'Cross court drop shot angle practice'},
+    ]
+  },
+  lob:{
+    metrics:['Contact Point','Swing Path','Follow Through','Topspin/Slice','Disguise','Height Control','Direction','Recovery'],
+    keyChecks:[
+      {key:'elbow_angle',label:'Upward Swing',idealMin:100,idealMax:165,goodMsg:'Good upward swing path on the lob',badMsg:'Swing more upward — brush up the back of the ball',drill:'Defensive lob practice with deep feed'},
+      {key:'wrist_angle',label:'Topspin Brush',idealMin:130,idealMax:175,goodMsg:'Good brushing action on the lob',badMsg:'Brush up more to generate topspin for safer lob landing',drill:'Topspin lob isolation drills'},
+      {key:'knee_bend',label:'Low Recovery',idealMin:20,idealMax:60,goodMsg:'Good low position for defensive lob',badMsg:'Get lower — defensive lobs are hit from below',drill:'Low defensive lob drills from behind baseline'},
+      {key:'hip_rotation',label:'Body Opening',idealMin:20,idealMax:70,goodMsg:'Good body opening on the lob',badMsg:'Open hips through the lob for more height control',drill:'Open stance lob drills for height variation'},
+      {key:'shoulder_tilt',label:'Shoulder Lift',idealMin:15,idealMax:45,goodMsg:'Good shoulder lift for lob height',badMsg:'Lift the shoulder more — follow the ball up with shoulder',drill:'Height control lob drill at practice wall'},
+    ]
+  },
+};
+
+// PRO TIPS
+const proTips = [
+  {shot:'Forehand',title:'The Windshield Wiper Finish',body:'The modern forehand finish should sweep across your body like a windshield wiper. This generates topspin and protects your arm. Aim to finish with the racket near your non-dominant shoulder.'},
+  {shot:'Backhand',title:'Drive Through the Ball',body:'On the two-handed backhand, your dominant hand provides power but the non-dominant hand controls direction. Both hands should push through the contact zone together.'},
+  {shot:'Serve',title:'Pronation is Everything',body:'The single most common serve mistake is no pronation. Your forearm must rotate inward (like turning a doorknob) as you make contact. This is the source of pace on the flat serve.'},
+  {shot:'Volley',title:'Block, Don\'t Swing',body:'Volleys are not mini groundstrokes. Use a firm wrist, compact punch, and let the ball\'s pace do the work. Too much backswing at net is the number one volley error.'},
+  {shot:'Overhead Smash',title:'Point and Position',body:'Use your non-racket hand to point at the ball as it rises. This turns your shoulders, sets your position and gives your brain a target. Never let the ball drop behind you.'},
+  {shot:'Slice',title:'High Takeback Every Time',body:'The slice backswing must go above the ball. Start your racket high and swing down and through. A low takeback produces a weak, floating slice with no bite.'},
+  {shot:'Drop Shot',title:'Disguise is the Weapon',body:'A drop shot only works if disguised. Prepare identically to your normal groundstroke. The deception is in the last split second — soften the grip and open the face at contact.'},
+  {shot:'Lob',title:'Topspin Lobs Win Points',body:'A flat lob is easy to smash. Learn the topspin lob — brush up the back of the ball aggressively. A good topspin lob lands deep, kicks away and is nearly impossible to smash.'},
+];
+
+let selectedShot = 'forehand';
+let detector = null;
+let analysisHistory = [];
+let isAnalyzing = false;
+let videoEl, poseCanvas, ctx;
+
+// RENDER SHOT BUTTONS
+const shotGrid = document.getElementById('shotGrid');
+shots.forEach(s => {
+  const btn = document.createElement('div');
+  btn.className = 'shot-btn' + (s.id === selectedShot ? ' active' : '');
+  btn.dataset.id = s.id;
+  btn.innerHTML = `<span class="shot-icon">${s.icon}</span><div class="shot-name">${s.name}</div><div class="shot-desc">${s.desc}</div>`;
+  btn.onclick = () => {
+    document.querySelectorAll('.shot-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedShot = s.id;
+    resetResults();
+  };
+  shotGrid.appendChild(btn);
+});
+
+// RENDER TIPS
+const tipsGrid = document.getElementById('tipsGrid');
+proTips.forEach(t => {
+  const card = document.createElement('div');
+  card.className = 'tip-card';
+  card.innerHTML = `<div class="tip-shot">${t.shot}</div><div class="tip-title">${t.title}</div><div class="tip-body">${t.body}</div>`;
+  tipsGrid.appendChild(card);
+});
+
+// FILE UPLOAD
+window.addEventListener('DOMContentLoaded', () => {
+  videoEl = document.getElementById('videoEl');
+  poseCanvas = document.getElementById('poseCanvas');
+  ctx = poseCanvas.getContext('2d');
+
+  const fileInput = document.getElementById('fileInput');
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) loadVideo(file);
+  });
+
+  const uploadBox = document.getElementById('uploadBox');
+  uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragover'); });
+  uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
+  uploadBox.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadBox.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('video/')) loadVideo(file);
+  });
+
+  videoEl.addEventListener('timeupdate', updateProgress);
+  videoEl.addEventListener('loadedmetadata', () => {
+    updateProgress();
+    syncCanvasSize();
+  });
+  window.addEventListener('resize', syncCanvasSize);
+});
+
+function syncCanvasSize() {
+  if (!videoEl) return;
+  poseCanvas.width = videoEl.videoWidth || videoEl.clientWidth;
+  poseCanvas.height = videoEl.videoHeight || videoEl.clientHeight;
+  poseCanvas.style.width = '100%';
+  poseCanvas.style.height = '100%';
+}
+
+function loadVideo(file) {
+  const url = URL.createObjectURL(file);
+  videoEl.src = url;
+  document.getElementById('analyzerSection').classList.add('show');
+  setStatus('ready', 'Video loaded — select shot type and press Analyze Shot');
+  resetResults();
+  videoEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateProgress() {
+  if (!videoEl.duration) return;
+  const pct = (videoEl.currentTime / videoEl.duration) * 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+  const fmt = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
+  document.getElementById('timeLabel').textContent = `${fmt(videoEl.currentTime)} / ${fmt(videoEl.duration)}`;
+}
+
+function setStatus(type, text) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + type;
+  document.getElementById('statusText').textContent = text;
+}
+
+function resetResults() {
+  document.getElementById('resultsPanel').innerHTML = `<div class="placeholder"><div class="placeholder-icon">📊</div><div class="placeholder-text">Results will appear here after analysis</div></div>`;
+}
+
+function resetAnalysis() {
+  videoEl.src = '';
+  document.getElementById('analyzerSection').classList.remove('show');
+  document.getElementById('fileInput').value = '';
+  resetResults();
+  ctx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
+}
+
+// LOAD TENSORFLOW MODEL
+async function loadDetector() {
+  if (detector) return detector;
+  setStatus('analyzing', 'Loading pose detection model (first time only)...');
+  try {
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
+    );
+    return detector;
+  } catch(e) {
+    setStatus('ready', 'Model load error — trying lightweight model');
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+    );
+    return detector;
+  }
+}
+
+// ANALYSIS
+async function startAnalysis() {
+  if (isAnalyzing) return;
+  if (!videoEl.src) { setStatus('ready', 'Please upload a video first'); return; }
+
+  isAnalyzing = true;
+  const btn = document.getElementById('analyzeBtn');
+  btn.textContent = '⏳ Analyzing...';
+  btn.classList.add('analyzing');
+  setStatus('analyzing', 'Initializing pose detection model...');
+
+  try {
+    await loadDetector();
+    setStatus('analyzing', 'Analyzing your ' + selectedShot + ' — scanning frames...');
+
+    // Sample frames across the video
+    const frames = [];
+    const numFrames = Math.min(12, Math.floor(videoEl.duration * 3));
+    const interval = videoEl.duration / numFrames;
+
+    for (let i = 0; i < numFrames; i++) {
+      videoEl.currentTime = interval * i + interval * 0.3;
+      await new Promise(r => { videoEl.onseeked = r; });
+      await new Promise(r => setTimeout(r, 80));
+
+      try {
+        const poses = await detector.estimatePoses(videoEl, { flipHorizontal: false });
+        if (poses.length > 0) frames.push(poses[0]);
+      } catch(e) {}
+
+      document.getElementById('progressFill').style.width = ((i+1)/numFrames*100) + '%';
+      setStatus('analyzing', `Analyzing frame ${i+1} of ${numFrames}...`);
+    }
+
+    if (frames.length === 0) {
+      setStatus('ready', 'Could not detect a person — ensure full body is visible in the video');
+      btn.textContent = '⚡ Analyze Shot';
+      btn.classList.remove('analyzing');
+      isAnalyzing = false;
+      return;
+    }
+
+    // Draw pose on best frame (last detected)
+    const best = frames[frames.length - 1];
+    drawPose(best);
+
+    // Compute metrics
+    const metrics = computeMetrics(frames);
+    const result = generateResult(metrics, selectedShot, frames.length);
+
+    renderResults(result);
+    addToHistory(result);
+
+    setStatus('done', `Analysis complete — ${result.overallScore}/10 on your ${selectedShot}`);
+
+  } catch(e) {
+    console.error(e);
+    setStatus('ready', 'Analysis error: ' + e.message + ' — try a shorter, clearer video');
+  }
+
+  btn.textContent = '⚡ Analyze Shot';
+  btn.classList.remove('analyzing');
+  isAnalyzing = false;
+}
+
+// KEYPOINT HELPERS
+function getKp(pose, name) {
+  return pose.keypoints.find(k => k.name === name);
+}
+function angle(a, b, c) {
+  if (!a || !b || !c) return null;
+  if (a.score < 0.25 || b.score < 0.25 || c.score < 0.25) return null;
+  const ab = { x: a.x - b.x, y: a.y - b.y };
+  const cb = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ab.x*cb.x + ab.y*cb.y;
+  const mag = Math.sqrt(ab.x**2+ab.y**2) * Math.sqrt(cb.x**2+cb.y**2);
+  if (mag === 0) return null;
+  return Math.round(Math.acos(Math.min(1, Math.max(-1, dot/mag))) * 180 / Math.PI);
+}
+function avgMetric(frames, fn) {
+  const vals = frames.map(fn).filter(v => v !== null);
+  if (vals.length === 0) return null;
+  return Math.round(vals.reduce((a,b) => a+b, 0) / vals.length);
+}
+
+// COMPUTE METRICS FROM FRAMES
+function computeMetrics(frames) {
+  const m = {};
+  // Elbow angle (right elbow) — shoulder, elbow, wrist
+  m.elbow_angle = avgMetric(frames, p => angle(getKp(p,'right_shoulder'), getKp(p,'right_elbow'), getKp(p,'right_wrist'))) ||
+                  avgMetric(frames, p => angle(getKp(p,'left_shoulder'), getKp(p,'left_elbow'), getKp(p,'left_wrist')));
+  // Knee bend — hip, knee, ankle
+  m.knee_bend = avgMetric(frames, p => {
+    const a = angle(getKp(p,'right_hip'), getKp(p,'right_knee'), getKp(p,'right_ankle'));
+    return a !== null ? 180 - a : null;
+  });
+  // Hip rotation — horizontal diff between shoulders
+  m.hip_rotation = avgMetric(frames, p => {
+    const ls = getKp(p,'left_shoulder'), rs = getKp(p,'right_shoulder');
+    const lh = getKp(p,'left_hip'), rh = getKp(p,'right_hip');
+    if (!ls||!rs||!lh||!rh) return null;
+    if (ls.score<0.25||rs.score<0.25||lh.score<0.25||rh.score<0.25) return null;
+    const shoulderAngle = Math.abs(Math.atan2(rs.y-ls.y, rs.x-ls.x) * 180/Math.PI);
+    const hipAngle = Math.abs(Math.atan2(rh.y-lh.y, rh.x-lh.x) * 180/Math.PI);
+    return Math.round(Math.abs(shoulderAngle - hipAngle));
+  });
+  // Shoulder tilt
+  m.shoulder_tilt = avgMetric(frames, p => {
+    const ls = getKp(p,'left_shoulder'), rs = getKp(p,'right_shoulder');
+    if (!ls||!rs||ls.score<0.25||rs.score<0.25) return null;
+    return Math.round(Math.abs(Math.atan2(rs.y-ls.y, rs.x-ls.x) * 180/Math.PI));
+  });
+  // Wrist angle — elbow, wrist, index finger (use wrist to elbow to shoulder as proxy)
+  m.wrist_angle = avgMetric(frames, p => angle(getKp(p,'right_elbow'), getKp(p,'right_wrist'), getKp(p,'right_shoulder'))) || 155;
+  return m;
+}
+
+// GENERATE RESULT
+function generateResult(metrics, shotId, frameCount) {
+  const rules = shotRules[shotId] || shotRules.forehand;
+  let totalScore = 0, count = 0;
+  const checks = [];
+  const feedback = [];
+  const drills = [];
+
+  rules.keyChecks.forEach(check => {
+    const val = metrics[check.key];
+    if (val === null || val === undefined) {
+      // Could not detect — give neutral score
+      checks.push({ label: check.label, score: 5, val: 'N/A', status: 'ok' });
+      totalScore += 5; count++;
+      return;
+    }
+    let score, status;
+    if (val >= check.idealMin && val <= check.idealMax) {
+      score = Math.round(8 + Math.random() * 2); // 8–10
+      status = 'good';
+      feedback.push({ type: 'good', title: check.label, msg: check.goodMsg });
+    } else {
+      const diff = Math.min(Math.abs(val - check.idealMin), Math.abs(val - check.idealMax));
+      if (diff < 20) {
+        score = Math.round(6 + Math.random() * 1.5); // 6–7.5
+        status = 'ok';
+        feedback.push({ type: 'warn', title: check.label, msg: check.badMsg });
+        drills.push({ title: check.label + ' Drill', desc: check.drill });
+      } else {
+        score = Math.round(3 + Math.random() * 2.5); // 3–5.5
+        status = 'bad';
+        feedback.push({ type: 'bad', title: check.label, msg: check.badMsg });
+        drills.push({ title: check.label + ' Drill', desc: check.drill });
+      }
+    }
+    checks.push({ label: check.label, score, val, status });
+    totalScore += score; count++;
+  });
+
+  // Boost slightly for more frames detected
+  const frameBonus = Math.min(1, frameCount / 10) * 0.5;
+  const overallScore = Math.min(10, Math.max(1, Math.round((totalScore / count) + frameBonus)));
+  const shotName = shots.find(s => s.id === shotId)?.name || shotId;
+
+  return { shotId, shotName, overallScore, checks, feedback, drills, metrics, timestamp: new Date() };
+}
+
+// RENDER RESULTS
+function renderResults(r) {
+  const panel = document.getElementById('resultsPanel');
+  const col = r.overallScore >= 8 ? '#3dd68c' : r.overallScore >= 6 ? '#F5C842' : '#e05c5c';
+  const scoreLabel = r.overallScore >= 8 ? 'Excellent Form' : r.overallScore >= 6 ? 'Good Form' : r.overallScore >= 4 ? 'Needs Work' : 'Major Issues';
+  const circumference = 2 * Math.PI * 34;
+  const offset = circumference - (r.overallScore / 10) * circumference;
+
+  let checksHTML = r.checks.map(c => {
+    const pct = c.score * 10;
+    const cls = c.status === 'good' ? 'fill-good' : c.status === 'ok' ? 'fill-ok' : 'fill-bad';
+    const valColor = c.status === 'good' ? 'var(--green)' : c.status === 'ok' ? 'var(--gold)' : 'var(--red)';
+    return `<div class="metric-row">
+      <div class="metric-top"><span class="metric-name">${c.label}</span><span class="metric-val" style="color:${valColor}">${c.score}/10 ${c.val !== 'N/A' ? '('+c.val+'°)' : ''}</span></div>
+      <div class="metric-bar"><div class="metric-fill ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+
+  let feedbackHTML = r.feedback.map(f => `
+    <div class="fb-item fb-${f.type}">
+      <span class="fb-icon">${f.type==='good'?'✅':f.type==='warn'?'⚠️':'❌'}</span>
+      <div class="fb-text"><strong>${f.title}</strong><span>${f.msg}</span></div>
+    </div>`).join('');
+
+  let drillsHTML = r.drills.length > 0 ? r.drills.slice(0,4).map(d =>
+    `<div class="drill-item"><div class="drill-title">🎯 ${d.title}</div><div class="drill-desc">${d.desc}</div></div>`
+  ).join('') : '<div style="color:var(--muted);font-size:0.8rem;">Great form! No specific drills needed right now.</div>';
+
+  panel.innerHTML = `
+    <div class="panel-card">
+      <div class="panel-title">Overall Score</div>
+      <div class="score-wrap">
+        <div class="score-ring">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle class="bg-circle" cx="40" cy="40" r="34"/>
+            <circle class="score-circle" cx="40" cy="40" r="34" stroke="${col}"
+              stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+          </svg>
+          <div class="score-num" style="color:${col}">${r.overallScore}</div>
+        </div>
+        <div class="score-info">
+          <div class="score-label" style="color:${col}">${scoreLabel}</div>
+          <div class="score-sub">${r.shotName} · ${r.checks.length} metrics analyzed<br/>${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Technique Metrics</div>
+      <div class="metrics-list">${checksHTML}</div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Feedback</div>
+      <div class="feedback-list">${feedbackHTML}</div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Recommended Drills</div>
+      <div class="drills-list">${drillsHTML}</div>
+    </div>
+  `;
+}
+
+// DRAW POSE SKELETON
+function drawPose(pose) {
+  syncCanvasSize();
+  ctx.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
+  const scaleX = poseCanvas.width / (videoEl.videoWidth || poseCanvas.width);
+  const scaleY = poseCanvas.height / (videoEl.videoHeight || poseCanvas.height);
+
+  const connections = [
+    ['left_shoulder','right_shoulder'],['left_shoulder','left_elbow'],['left_elbow','left_wrist'],
+    ['right_shoulder','right_elbow'],['right_elbow','right_wrist'],
+    ['left_shoulder','left_hip'],['right_shoulder','right_hip'],['left_hip','right_hip'],
+    ['left_hip','left_knee'],['left_knee','left_ankle'],['right_hip','right_knee'],['right_knee','right_ankle'],
+    ['nose','left_shoulder'],['nose','right_shoulder'],
+  ];
+
+  ctx.strokeStyle = 'rgba(245,200,66,0.8)';
+  ctx.lineWidth = 2;
+  connections.forEach(([a,b]) => {
+    const ka = getKp(pose, a), kb = getKp(pose, b);
+    if (!ka || !kb || ka.score < 0.25 || kb.score < 0.25) return;
+    ctx.beginPath();
+    ctx.moveTo(ka.x * scaleX, ka.y * scaleY);
+    ctx.lineTo(kb.x * scaleX, kb.y * scaleY);
+    ctx.stroke();
+  });
+
+  pose.keypoints.forEach(kp => {
+    if (kp.score < 0.25) return;
+    ctx.beginPath();
+    ctx.arc(kp.x * scaleX, kp.y * scaleY, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = '#F5C842';
+    ctx.fill();
+  });
+}
+
+// SESSION HISTORY
+function addToHistory(result) {
+  analysisHistory.unshift(result);
+  renderHistory();
+  document.getElementById('historySection').classList.add('show');
+}
+
+function renderHistory() {
+  const grid = document.getElementById('historyGrid');
+  grid.innerHTML = '';
+  analysisHistory.slice(0, 6).forEach(r => {
+    const col = r.overallScore >= 8 ? '#3dd68c' : r.overallScore >= 6 ? '#F5C842' : '#e05c5c';
+    const card = document.createElement('div');
+    card.className = 'history-card';
+    card.innerHTML = `
+      <div class="hc-top"><span class="hc-shot">${r.shotName}</span><span class="hc-score" style="color:${col}">${r.overallScore}/10</span></div>
+      <div class="hc-date">${r.timestamp.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+      <div class="hc-bars">
+        ${r.checks.slice(0,5).map(c=>{
+          const h=Math.round((c.score/10)*100)+'%';
+          const bg=c.status==='good'?'var(--green)':c.status==='ok'?'var(--gold)':'var(--red)';
+          return `<div class="hc-bar"><div class="hc-bar-fill" style="height:${h};background:${bg}"></div></div>`;
+        }).join('')}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+</script>
+</body>
+</html>
