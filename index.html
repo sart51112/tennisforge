@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>TennisForge — Shot Analyzer</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
 <style>
 :root{
   --bg:#080808;--s1:#101010;--s2:#181818;--s3:#202020;
@@ -547,26 +546,42 @@ function resetAnalysis() {
 // ── Load MediaPipe Pose ──────────────────────────────────────
 async function loadPose() {
   if (poseInstance) return poseInstance;
-  setStatus('analyzing', 'Loading MediaPipe pose model — 10–20 seconds first time...');
+  setStatus('analyzing', 'Loading MediaPipe pose model — 10-20 seconds first time...');
+
+  // wait for Pose class to be available
+  let waited = 0;
+  while (typeof Pose === 'undefined') {
+    await new Promise(r => setTimeout(r, 400));
+    waited += 400;
+    if (waited > 20000) throw new Error('MediaPipe did not load — check your internet connection');
+  }
 
   return new Promise((resolve, reject) => {
-    let timeout = setTimeout(() => reject(new Error('MediaPipe load timeout — check internet')), 30000);
-    const pose = new Pose({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-    });
-    pose.setOptions({
-      modelComplexity: 2,       // highest accuracy
-      smoothLandmarks: true,
-      enableSegmentation: false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-    pose.onResults(() => {}); // dummy init
-    pose.initialize().then(() => {
+    const timeout = setTimeout(() => reject(new Error('MediaPipe init timeout — try refreshing the page')), 40000);
+    try {
+      const pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+      });
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        minDetectionConfidence: 0.45,
+        minTrackingConfidence: 0.45
+      });
+      pose.onResults(() => {});
+      pose.initialize().then(() => {
+        clearTimeout(timeout);
+        poseInstance = pose;
+        resolve(pose);
+      }).catch(e => {
+        clearTimeout(timeout);
+        reject(new Error('Pose init failed: ' + e.message));
+      });
+    } catch(e) {
       clearTimeout(timeout);
-      poseInstance = pose;
-      resolve(pose);
-    }).catch(reject);
+      reject(new Error('Pose constructor failed: ' + e.message));
+    }
   });
 }
 
@@ -647,7 +662,8 @@ async function startAnalysis() {
 
   } catch(e) {
     console.error(e);
-    setStatus('ready', '❌ ' + (e.message || 'Error') + ' — try a shorter MP4 filmed from the side');
+    console.error('Full error:', e);
+    setStatus('ready', '❌ Error: ' + (e.message || String(e)) + ' — open browser console (F12) for details');
   }
 
   btn.textContent = '⚡ Analyze Shot';
