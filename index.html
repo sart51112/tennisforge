@@ -421,6 +421,7 @@ proTips.forEach(t => {
 // FILE UPLOAD
 window.addEventListener('DOMContentLoaded', () => {
   videoEl = document.getElementById('videoEl');
+  videoEl.crossOrigin = "anonymous";
   poseCanvas = document.getElementById('poseCanvas');
   ctx = poseCanvas.getContext('2d');
   // make analyzeBtn work via onclick attribute too
@@ -517,6 +518,7 @@ async function loadDetector() {
 async function startAnalysis() {
   if (isAnalyzing) return;
   videoEl = document.getElementById('videoEl');
+  videoEl.crossOrigin = "anonymous";
   poseCanvas = document.getElementById('poseCanvas');
   ctx = poseCanvas.getContext('2d');
   if (!videoEl.src || videoEl.readyState < 1) {
@@ -543,11 +545,17 @@ async function startAnalysis() {
       await new Promise(r => {
         const fn = () => { videoEl.removeEventListener('seeked', fn); r(); };
         videoEl.addEventListener('seeked', fn);
-        setTimeout(r, 2000);
+        setTimeout(r, 3000);
       });
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 300));
       try {
-        const poses = await detector.estimatePoses(videoEl);
+        // draw frame to offscreen canvas first — much more reliable than direct video
+        const offscreen = document.createElement('canvas');
+        offscreen.width = videoEl.videoWidth || 640;
+        offscreen.height = videoEl.videoHeight || 480;
+        const offCtx = offscreen.getContext('2d');
+        offCtx.drawImage(videoEl, 0, 0, offscreen.width, offscreen.height);
+        const poses = await detector.estimatePoses(offscreen);
         if (poses && poses.length > 0) frames.push(poses[0]);
       } catch(e) { console.warn('frame err', e); }
       document.getElementById('progressFill').style.width = ((i+1)/numFrames*100) + '%';
