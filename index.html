@@ -296,81 +296,121 @@ const shotRules = {
   forehand:{
     metrics:['Hip Rotation','Elbow Position','Follow Through','Knee Bend','Shoulder Turn','Wrist Snap','Stance Width','Weight Transfer'],
     keyChecks:[
-      {key:'elbow_angle',label:'Elbow Angle',idealMin:80,idealMax:150,goodMsg:'Good elbow bend — power generated correctly',badMsg:'Elbow too straight — bend more for power and control',drill:'Shadow swing drills focusing on elbow position'},
-      {key:'hip_rotation',label:'Hip Rotation',idealMin:30,idealMax:90,goodMsg:'Excellent hip rotation — great power source',badMsg:'Insufficient hip rotation — rotate hips fully through contact',drill:'Hip rotation drills with resistance band'},
-      {key:'knee_bend',label:'Knee Bend',idealMin:20,idealMax:60,goodMsg:'Good knee bend — stable base',badMsg:'Straighten/bend knees more — get low for stability',drill:'Wall sit holds + split step practice'},
-      {key:'shoulder_tilt',label:'Shoulder Tilt',idealMin:10,idealMax:40,goodMsg:'Proper shoulder tilt — good racket path',badMsg:'Shoulder tilt off — affects swing path and spin',drill:'Mirror drills focusing on shoulder drop'},
-      {key:'wrist_angle',label:'Wrist Snap',idealMin:150,idealMax:180,goodMsg:'Strong wrist through contact — great topspin',badMsg:'Wrist too loose — firm up at contact point',drill:'Wrist strengthening with light racket shadow swings'},
+      // elbow should be 90-120 at contact — tight range
+      {key:'elbow_angle',label:'Elbow Angle at Contact',idealMin:88,idealMax:118,goodMsg:'Elbow angle is correct — power and control are well balanced',badMsg:'Elbow angle is off — should be 90–120° at contact. Straighten or bend more',drill:'Shadow swing in slow motion, pause at contact and check elbow with mirror'},
+      // hip rotation — shoulder vs hip horizontal gap should be 35-60
+      {key:'hip_rotation',label:'Hip Rotation',idealMin:35,idealMax:58,goodMsg:'Excellent hip rotation — rotating through the ball correctly',badMsg:'Not enough hip rotation — your hips must lead the swing, not your arm',drill:'Hip rotation drills: feet planted, rotate hips only, 50 reps daily'},
+      // knee bend — 25-45 is athletic ready position
+      {key:'knee_bend',label:'Knee Bend',idealMin:25,idealMax:42,goodMsg:'Good athletic knee bend — stable and explosive base',badMsg:'Knee bend wrong — stay between 25–45°. Too straight = no power, too low = slow recovery',drill:'Wall sit at 30° for 60 seconds to build muscle memory'},
+      // shoulder tilt 12-28 for forehand
+      {key:'shoulder_tilt',label:'Shoulder Tilt',idealMin:12,idealMax:26,goodMsg:'Shoulder tilt is correct — good racket path setup',badMsg:'Shoulder tilt off — drop the hitting shoulder slightly at contact',drill:'Mirror drill: watch your shoulder level during shadow swings'},
+      // wrist should be firm 160-180 at contact
+      {key:'wrist_angle',label:'Wrist Firmness at Contact',idealMin:158,idealMax:180,goodMsg:'Wrist is firm at contact — generating clean topspin',badMsg:'Wrist is breaking at contact — firm it up. A loose wrist kills accuracy',drill:'Hit against wall with focus on wrist lock — feel the firmness'},
     ]
   },
   backhand:{
     metrics:['Two-Hand Grip','Hip Rotation','Elbow Extension','Knee Bend','Shoulder Rotation','Follow Through','Stance','Contact Point'],
     keyChecks:[
-      {key:'elbow_angle',label:'Elbow Extension',idealMin:100,idealMax:170,goodMsg:'Good arm extension through contact',badMsg:'Not extending enough — extend arms fully through the shot',drill:'Wall hitting focusing on full arm extension'},
-      {key:'hip_rotation',label:'Hip Drive',idealMin:40,idealMax:100,goodMsg:'Good hip drive on the backhand',badMsg:'Hips not driving through — use your whole body',drill:'Hip drive with closed stance drills'},
-      {key:'knee_bend',label:'Knee Bend',idealMin:20,idealMax:55,goodMsg:'Good knee bend — stable platform',badMsg:'Get lower — bend knees more for power',drill:'Low ball machine drills to force knee bend'},
-      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:20,idealMax:50,goodMsg:'Good shoulder turn on backhand',badMsg:'Turn shoulders more — full shoulder rotation needed',drill:'Shoulder turn isolation drill with coach feed'},
-      {key:'wrist_angle',label:'Grip Firmness',idealMin:140,idealMax:180,goodMsg:'Firm grip through contact — good',badMsg:'Wrist break at contact — firm up the grip',drill:'Heavy ball hitting to build grip firmness'},
+      // backhand extension 110-155
+      {key:'elbow_angle',label:'Arm Extension',idealMin:112,idealMax:152,goodMsg:'Good arm extension through contact — driving through the ball',badMsg:'Arm extension wrong — should be 110–155°. Not enough extension loses pace',drill:'Wall backhand drill — focus on feeling full extension at the wall'},
+      // hip drive backhand 45-75
+      {key:'hip_rotation',label:'Hip Drive',idealMin:46,idealMax:72,goodMsg:'Strong hip drive — using your whole body on the backhand',badMsg:'Hips not driving through — backhand needs full hip rotation, not just arms',drill:'Closed stance backhand with exaggerated hip drive, 30 reps'},
+      // knee bend 22-40
+      {key:'knee_bend',label:'Knee Bend',idealMin:22,idealMax:40,goodMsg:'Good stable knee position for backhand',badMsg:'Adjust knee bend — 22–40° ideal. Too upright = poor balance on backhand',drill:'Backhand with low ball feed to force proper knee position'},
+      // shoulder rotation 22-42
+      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:22,idealMax:42,goodMsg:'Shoulders rotating correctly through the backhand',badMsg:'Incomplete shoulder rotation — full shoulder turn is required for a clean backhand',drill:'Shoulder coil drill: turn fully back, then fully through, no ball'},
+      // wrist firmness 148-180
+      {key:'wrist_angle',label:'Wrist Lock',idealMin:148,idealMax:180,goodMsg:'Wrist is locked — clean contact on the backhand',badMsg:'Wrist breaking on backhand — lock the wrists firmly through contact zone',drill:'Two-hand backhand grip squeeze drill against wall'},
     ]
   },
   serve:{
     metrics:['Ball Toss','Knee Bend','Pronation','Trophy Position','Hip Drive','Shoulder Rotation','Arm Extension','Follow Through'],
     keyChecks:[
-      {key:'elbow_angle',label:'Arm Extension',idealMin:150,idealMax:180,goodMsg:'Full arm extension at contact — excellent',badMsg:'Not fully extending — reach up fully at contact',drill:'Serve with fence behind to force full extension'},
-      {key:'hip_rotation',label:'Hip Drive & Pronation',idealMin:45,idealMax:110,goodMsg:'Good pronation and hip drive on serve',badMsg:'Add pronation — rotate forearm inward at contact for power',drill:'Slow motion serve practice focusing on pronation'},
-      {key:'knee_bend',label:'Knee Coil',idealMin:30,idealMax:80,goodMsg:'Good knee bend — loading power well',badMsg:'Bend knees more in trophy position for explosive drive',drill:'Jump serve drills to build leg drive habit'},
-      {key:'shoulder_tilt',label:'Shoulder & Trunk Tilt',idealMin:20,idealMax:55,goodMsg:'Good trunk tilt — using body weight',badMsg:'Tilt your body into the serve more — use your weight',drill:'Trophy position holds with mirror feedback'},
-      {key:'wrist_angle',label:'Wrist Snap',idealMin:120,idealMax:170,goodMsg:'Good wrist snap — generating spin and pace',badMsg:'Snap wrist more aggressively at contact for kick/topspin',drill:'Ball toss and catch with racket for wrist feel'},
+      // serve arm must be near fully extended 165-180
+      {key:'elbow_angle',label:'Arm Extension at Contact',idealMin:166,idealMax:180,goodMsg:'Full arm extension at contact — reaching maximum height',badMsg:'Arm not fully extended — you MUST reach up completely. Any bend loses 10–20% of serve power',drill:'Serve with a target at max reach height — touch it with racket on every rep'},
+      // pronation/hip — serve hip rotation 55-95 is good
+      {key:'hip_rotation',label:'Hip Rotation & Pronation',idealMin:56,idealMax:92,goodMsg:'Good hip rotation — body is driving the serve correctly',badMsg:'Insufficient hip/pronation — rotate forearm INWARD at contact like turning a doorknob. This is the #1 serve mistake',drill:'Slow motion serve with focus only on forearm pronation — 20 reps no ball'},
+      // knee coil 35-60 in trophy
+      {key:'knee_bend',label:'Knee Coil (Trophy Position)',idealMin:36,idealMax:58,goodMsg:'Good knee bend — coiling for explosive upward drive',badMsg:'Knee coil is wrong — bend 35–60° in trophy position to load your legs for upward explosion',drill:'Trophy position hold drill — hold for 3 seconds, check knee angle in mirror'},
+      // trunk tilt 22-45
+      {key:'shoulder_tilt',label:'Trunk Tilt Into Serve',idealMin:22,idealMax:44,goodMsg:'Good trunk tilt — using body weight effectively',badMsg:'Not tilting trunk enough — lean your whole body into the serve. Stand tall = weak serve',drill:'Serve with chalk line on ground — ensure front foot crosses line on follow through'},
+      // wrist snap 125-160 for serve
+      {key:'wrist_angle',label:'Wrist Snap',idealMin:126,idealMax:158,goodMsg:'Wrist is snapping well — generating spin and pace',badMsg:'Wrist snap is insufficient — snap aggressively downward at contact for kick serve, forward for flat',drill:'Ball catch drill: toss ball, snap wrist to catch it — builds snap muscle memory'},
     ]
   },
   volley:{
     metrics:['Compact Swing','Punch Action','Ready Position','Wrist Firmness','Footwork','Contact Point','Low Stance','Split Step'],
     keyChecks:[
-      {key:'elbow_angle',label:'Compact Punch',idealMin:60,idealMax:110,goodMsg:'Compact volley action — minimal backswing',badMsg:'Too much backswing — keep it compact and punch forward',drill:'Feed and punch volleys against wall'},
-      {key:'knee_bend',label:'Low Stance',idealMin:25,idealMax:65,goodMsg:'Good low stance — ready for any height',badMsg:'Get lower — bend knees more for ground-level volleys',drill:'Low volley drills with slow hand feeds'},
-      {key:'wrist_angle',label:'Wrist Firmness',idealMin:155,idealMax:180,goodMsg:'Firm wrist — controlling direction well',badMsg:'Firm up your wrist — loose wrist loses control at net',drill:'Catch-and-release drill with heavy glove'},
-      {key:'shoulder_tilt',label:'Forward Lean',idealMin:5,idealMax:30,goodMsg:'Good forward lean — aggressive volley stance',badMsg:'Lean into the volley more — forward pressure wins points',drill:'Net approach drills with split step emphasis'},
-      {key:'hip_rotation',label:'Turn & Block',idealMin:20,idealMax:60,goodMsg:'Good shoulder turn on the volley',badMsg:'Turn shoulders slightly — do not just use the arm',drill:'Isolated shoulder turn volley drill with partner'},
+      // volley must be COMPACT — 55-95 elbow
+      {key:'elbow_angle',label:'Compact Punch (No Backswing)',idealMin:56,idealMax:92,goodMsg:'Compact volley — minimal backswing, clean punch',badMsg:'Too much backswing on volley — elbow must stay at 55–95°. Big swings at net = errors',drill:'Volley with wall behind you — forces compact action'},
+      // low stance 28-52
+      {key:'knee_bend',label:'Low Ready Stance',idealMin:28,idealMax:50,goodMsg:'Good low athletic stance at the net',badMsg:'Standing too upright for volleys — get low, 28–50° knee bend for any shot height',drill:'Net volley drill — hold low position between every shot'},
+      // wrist very firm at net 162-180
+      {key:'wrist_angle',label:'Locked Wrist',idealMin:162,idealMax:180,goodMsg:'Wrist is locked — volleys are controlled and firm',badMsg:'Wrist too loose for volley — must be locked completely. Soft wrist = volleys go anywhere',drill:'Squeeze grip handle hard at contact — build the lock habit'},
+      // forward lean 6-22
+      {key:'shoulder_tilt',label:'Forward Body Lean',idealMin:6,idealMax:22,goodMsg:'Good forward lean — attacking the volley',badMsg:'Not leaning forward enough — lean INTO the volley, do not wait for it',drill:'Net approach drill — coach feeds, you must step forward into every volley'},
+      // shoulder turn 18-48
+      {key:'hip_rotation',label:'Shoulder Turn',idealMin:18,idealMax:46,goodMsg:'Good shoulder turn — blocking volley correctly',badMsg:'Turn shoulders on volleys — a slight turn gives direction. Pure arm volleys lack control',drill:'Shoulder turn isolation — volley with one arm behind back'},
     ]
   },
   smash:{
     metrics:['Positioning','Racket Preparation','Arm Extension','Hip Rotation','Contact Point','Follow Through','Footwork','Power'],
     keyChecks:[
-      {key:'elbow_angle',label:'Full Extension',idealMin:155,idealMax:180,goodMsg:'Full arm extension — maximizing reach and power',badMsg:'Extend arm fully overhead — reach as high as possible',drill:'Overhead smash with high toss practice'},
-      {key:'hip_rotation',label:'Hip & Trunk Rotation',idealMin:60,idealMax:120,goodMsg:'Excellent rotation — powerful smash mechanics',badMsg:'Rotate hips and trunk more aggressively through contact',drill:'Smash shadow swings with hip rotation focus'},
-      {key:'knee_bend',label:'Leg Drive',idealMin:15,idealMax:50,goodMsg:'Good leg drive — using ground for power',badMsg:'Push off the ground more — legs generate smash power',drill:'Jump smash drills to build explosive habit'},
-      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:30,idealMax:70,goodMsg:'Good shoulder turn for smash',badMsg:'Turn shoulders more — like a throwing motion',drill:'Throwing motions to groove shoulder pattern'},
-      {key:'wrist_angle',label:'Wrist Snap',idealMin:130,idealMax:175,goodMsg:'Aggressive wrist snap — pace and spin on smash',badMsg:'Snap the wrist more at contact for extra pace',drill:'Smash with focus on snapping point at contact'},
+      // smash needs max extension 168-180
+      {key:'elbow_angle',label:'Full Overhead Extension',idealMin:168,idealMax:180,goodMsg:'Full arm extension on smash — maximum power and reach',badMsg:'Not reaching high enough — smash MUST be fully extended 168–180°. Bent arm = weak smash',drill:'Smash with highest possible contact point — use cone as target overhead'},
+      // smash hip 68-108
+      {key:'hip_rotation',label:'Hip & Trunk Power',idealMin:68,idealMax:106,goodMsg:'Explosive hip and trunk rotation — powerful smash',badMsg:'Weak hip rotation on smash — rotate hips and trunk aggressively like throwing a ball',drill:'Smash shadow swings — exaggerate hip snap until it feels natural'},
+      // leg drive 18-42
+      {key:'knee_bend',label:'Explosive Leg Drive',idealMin:18,idealMax:40,goodMsg:'Good leg drive — ground power transferred to smash',badMsg:'Not using legs on smash — push off ground at 18–40° bend. Legs generate smash power',drill:'Jump smash practice — literally jump on every smash to build explosive habit'},
+      // shoulder rotation 32-62
+      {key:'shoulder_tilt',label:'Shoulder Rotation',idealMin:32,idealMax:60,goodMsg:'Shoulder rotation is strong — throwing motion correct',badMsg:'Shoulder rotation weak — smash is a throwing motion. Turn shoulders 32–60° through contact',drill:'Ball throwing motion drill — 30 overhand throws to groove the pattern'},
+      // wrist snap 132-165
+      {key:'wrist_angle',label:'Wrist Snap Power',idealMin:132,idealMax:163,goodMsg:'Strong wrist snap — generating pace on the smash',badMsg:'Wrist snap too weak — snap the wrist hard at contact for extra pace and angle',drill:'Smash with towel on wrist — you will feel the snap clearly'},
     ]
   },
   slice:{
     metrics:['High to Low Swing','Open Racket Face','Underspin','Follow Through','Stance','Knee Bend','Contact Point','Grip'],
     keyChecks:[
-      {key:'elbow_angle',label:'Swing Path',idealMin:90,idealMax:155,goodMsg:'Good high-to-low swing — generating slice',badMsg:'Swing more high to low — brush under the ball for backspin',drill:'Slice against wall focusing on high takeback'},
-      {key:'wrist_angle',label:'Open Racket Face',idealMin:100,idealMax:160,goodMsg:'Good racket face — proper slice angle',badMsg:'Open racket face more — tilt back to generate underspin',drill:'Slow feed slice drills focusing on face angle'},
-      {key:'knee_bend',label:'Knee Bend',idealMin:15,idealMax:50,goodMsg:'Good knee bend for slice',badMsg:'Bend knees more for control on the slice',drill:'Low slice drills with low feed to force knee bend'},
-      {key:'hip_rotation',label:'Shoulder Turn',idealMin:25,idealMax:65,goodMsg:'Good shoulder preparation',badMsg:'More shoulder turn on takeback for slice',drill:'Coil and uncoil drill for slice takeback'},
-      {key:'shoulder_tilt',label:'Forward Motion',idealMin:10,idealMax:40,goodMsg:'Good forward shoulder drive',badMsg:'Drive the shoulder through more on slice',drill:'Slice practice with emphasis on shoulder follow through'},
+      // slice swing path 95-140
+      {key:'elbow_angle',label:'High-to-Low Swing Path',idealMin:96,idealMax:138,goodMsg:'Correct high-to-low slice swing — generating clean backspin',badMsg:'Swing path wrong for slice — must start HIGH and go LOW through contact. Flat swing = no slice',drill:'Slice against wall from high takeback — feel the downward brush'},
+      // open face 105-148
+      {key:'wrist_angle',label:'Open Racket Face',idealMin:106,idealMax:146,goodMsg:'Racket face is open — creating good underspin',badMsg:'Racket face not open enough — tilt racket back 15–20° to brush under the ball for backspin',drill:'Slow feed slice — focus only on feeling the open face at contact'},
+      // knee 16-38
+      {key:'knee_bend',label:'Knee Bend',idealMin:16,idealMax:38,goodMsg:'Good knee position for slice control',badMsg:'Knee bend off for slice — slight bend 16–38° gives better balance and low ball control',drill:'Low slice drill — coach feeds low, forces correct knee and swing path'},
+      // shoulder turn 26-52
+      {key:'hip_rotation',label:'Shoulder Preparation',idealMin:26,idealMax:50,goodMsg:'Good shoulder turn on slice takeback',badMsg:'Not enough shoulder turn on slice — full coil needed before the downward swing',drill:'Slice coil drill — turn shoulders back fully, pause, then swing'},
+      // forward motion 12-32
+      {key:'shoulder_tilt',label:'Shoulder Drive Through',idealMin:12,idealMax:32,goodMsg:'Shoulder driving through the slice correctly',badMsg:'Shoulder stopping on slice — follow through with shoulder past contact point',drill:'Slice follow through drill — finish with shoulder pointing at target'},
     ]
   },
   dropshot:{
     metrics:['Disguise','Touch','Racket Face','Follow Through','Positioning','Deception','Net Clearance','Spin'],
     keyChecks:[
-      {key:'wrist_angle',label:'Touch & Feel',idealMin:120,idealMax:165,goodMsg:'Good touch on the drop shot',badMsg:'Soften the wrist more — absorb pace for better touch',drill:'Feed and touch drills close to net'},
-      {key:'elbow_angle',label:'Compact Action',idealMin:70,idealMax:120,goodMsg:'Compact drop shot action — good deception',badMsg:'Use a more compact action to disguise the drop shot',drill:'Drop shot disguised as drive drill with partner'},
-      {key:'knee_bend',label:'Low Position',idealMin:20,idealMax:60,goodMsg:'Good low position for drop shot',badMsg:'Get lower for better control on the drop shot',drill:'Low ball touch drills inside service box'},
-      {key:'hip_rotation',label:'Disguise',idealMin:15,idealMax:50,goodMsg:'Good body disguise on the drop shot',badMsg:'Prepare the same as a drive to disguise intent',drill:'Mix drive and drop shot from same takeback'},
-      {key:'shoulder_tilt',label:'Angle',idealMin:10,idealMax:35,goodMsg:'Good angle for drop shot',badMsg:'Open your shoulder slightly to angle the drop shot',drill:'Cross court drop shot angle practice'},
+      // touch wrist 118-148 — absorbing
+      {key:'wrist_angle',label:'Soft Touch (Wrist Absorption)',idealMin:118,idealMax:146,goodMsg:'Good wrist softness — absorbing pace for delicate touch',badMsg:'Wrist too firm for drop shot — soften it to 118–148° to absorb ball pace. Hard wrist = long drop shot',drill:'Catch the ball with racket face — feel it stop. Build the soft touch feeling'},
+      // compact 65-105
+      {key:'elbow_angle',label:'Compact Deceptive Action',idealMin:66,idealMax:102,goodMsg:'Compact action — good disguise on the drop shot',badMsg:'Too big a swing for drop shot — keep elbow 65–105°, compact action hides your intention',drill:'Same preparation as drive, last moment open face — disguise drill with partner'},
+      // low position 22-48
+      {key:'knee_bend',label:'Low Contact Position',idealMin:22,idealMax:46,goodMsg:'Good low position — drop shot contact height is correct',badMsg:'Too upright for drop shot — lower yourself 22–48° to control the low contact point',drill:'Drop shot from low feed — always from knee height or below'},
+      // disguise 14-42
+      {key:'hip_rotation',label:'Body Disguise',idealMin:14,idealMax:40,goodMsg:'Good body language — disguising the drop shot well',badMsg:'Body is telegraphing the drop shot — prepare IDENTICALLY to a regular groundstroke',drill:'Alternate drive and drop from same exact preparation — partner must guess'},
+      // angle 8-28
+      {key:'shoulder_tilt',label:'Drop Shot Angle',idealMin:8,idealMax:26,goodMsg:'Good angle — drop shot direction is controlled',badMsg:'Shoulder angle wrong — slight 8–26° open shoulder gives cross-court angle on drop shot',drill:'Cross court drop shot targets drill — hit 20 to each corner'},
     ]
   },
   lob:{
     metrics:['Contact Point','Swing Path','Follow Through','Topspin/Slice','Disguise','Height Control','Direction','Recovery'],
     keyChecks:[
-      {key:'elbow_angle',label:'Upward Swing',idealMin:100,idealMax:165,goodMsg:'Good upward swing path on the lob',badMsg:'Swing more upward — brush up the back of the ball',drill:'Defensive lob practice with deep feed'},
-      {key:'wrist_angle',label:'Topspin Brush',idealMin:130,idealMax:175,goodMsg:'Good brushing action on the lob',badMsg:'Brush up more to generate topspin for safer lob landing',drill:'Topspin lob isolation drills'},
-      {key:'knee_bend',label:'Low Recovery',idealMin:20,idealMax:60,goodMsg:'Good low position for defensive lob',badMsg:'Get lower — defensive lobs are hit from below',drill:'Low defensive lob drills from behind baseline'},
-      {key:'hip_rotation',label:'Body Opening',idealMin:20,idealMax:70,goodMsg:'Good body opening on the lob',badMsg:'Open hips through the lob for more height control',drill:'Open stance lob drills for height variation'},
-      {key:'shoulder_tilt',label:'Shoulder Lift',idealMin:15,idealMax:45,goodMsg:'Good shoulder lift for lob height',badMsg:'Lift the shoulder more — follow the ball up with shoulder',drill:'Height control lob drill at practice wall'},
+      // upward brush 105-152
+      {key:'elbow_angle',label:'Upward Swing Path',idealMin:106,idealMax:150,goodMsg:'Good upward brush — generating height and topspin on lob',badMsg:'Swing path too flat for lob — swing UPWARD 105–152° brushing up the back of the ball',drill:'Defensive lob practice — set a height target (string across court 4m high)'},
+      // topspin brush 132-168
+      {key:'wrist_angle',label:'Topspin Brush Action',idealMin:132,idealMax:166,goodMsg:'Good topspin brush — lob will land deep and kick away',badMsg:'Not enough topspin brush on lob — brush UP aggressively. Flat lobs are easy to smash',drill:'Topspin lob isolation — feel the low-to-high extreme brush'},
+      // low recovery 22-52
+      {key:'knee_bend',label:'Low Defensive Position',idealMin:22,idealMax:50,goodMsg:'Good low position — defensive lob hit from the right height',badMsg:'Too upright for a defensive lob — 22–50° knee bend, get under the ball',drill:'Defensive lob from deep low feed — forces correct low position'},
+      // body opening 22-62
+      {key:'hip_rotation',label:'Hip Opening',idealMin:22,idealMax:60,goodMsg:'Good hip opening — controlling lob height and direction',badMsg:'Hips not opening enough on lob — open hips through the shot for more height and direction control',drill:'Open stance lob drill — exaggerate hip opening on every rep'},
+      // shoulder lift 16-38
+      {key:'shoulder_tilt',label:'Shoulder Follow Through',idealMin:16,idealMax:36,goodMsg:'Good shoulder follow through — lob height well controlled',badMsg:'Shoulder stopping too early — follow the ball UP with your shoulder after contact',drill:'Lob follow through drill — shoulder must point UP at finish'},
     ]
   },
 };
@@ -653,18 +693,36 @@ function generateResult(metrics, shotId, frameCount) {
     }
     let score, status;
     if (val >= check.idealMin && val <= check.idealMax) {
-      score = Math.round(8 + Math.random() * 2); // 8–10
+      // within ideal range — but how close to perfect centre?
+      const centre = (check.idealMin + check.idealMax) / 2;
+      const range = (check.idealMax - check.idealMin) / 2;
+      const dist = Math.abs(val - centre) / range; // 0 = perfect, 1 = edge of ideal
+      score = Math.round(10 - dist * 2); // 8–10
       status = 'good';
       feedback.push({ type: 'good', title: check.label, msg: check.goodMsg });
     } else {
       const diff = Math.min(Math.abs(val - check.idealMin), Math.abs(val - check.idealMax));
-      if (diff < 20) {
-        score = Math.round(6 + Math.random() * 1.5); // 6–7.5
+      if (diff <= 8) {
+        // very close — just outside ideal
+        score = Math.round(6 + Math.random() * 0.8); // 6–6.8
         status = 'ok';
         feedback.push({ type: 'warn', title: check.label, msg: check.badMsg });
         drills.push({ title: check.label + ' Drill', desc: check.drill });
+      } else if (diff <= 20) {
+        // noticeably off
+        score = Math.round(4 + Math.random() * 1.2); // 4–5.2
+        status = 'ok';
+        feedback.push({ type: 'warn', title: check.label, msg: check.badMsg });
+        drills.push({ title: check.label + ' Drill', desc: check.drill });
+      } else if (diff <= 40) {
+        // significantly off
+        score = Math.round(2 + Math.random() * 1.5); // 2–3.5
+        status = 'bad';
+        feedback.push({ type: 'bad', title: check.label, msg: check.badMsg });
+        drills.push({ title: check.label + ' Drill', desc: check.drill });
       } else {
-        score = Math.round(3 + Math.random() * 2.5); // 3–5.5
+        // very wrong
+        score = Math.round(1 + Math.random()); // 1–2
         status = 'bad';
         feedback.push({ type: 'bad', title: check.label, msg: check.badMsg });
         drills.push({ title: check.label + ' Drill', desc: check.drill });
@@ -674,9 +732,8 @@ function generateResult(metrics, shotId, frameCount) {
     totalScore += score; count++;
   });
 
-  // Boost slightly for more frames detected
-  const frameBonus = Math.min(1, frameCount / 10) * 0.5;
-  const overallScore = Math.min(10, Math.max(1, Math.round((totalScore / count) + frameBonus)));
+  // strict average — no bonus inflation
+  const overallScore = Math.min(10, Math.max(1, Math.round(totalScore / count)));
   const shotName = shots.find(s => s.id === shotId)?.name || shotId;
 
   return { shotId, shotName, overallScore, checks, feedback, drills, metrics, timestamp: new Date() };
